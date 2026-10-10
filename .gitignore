@@ -1,0 +1,9 @@
+goods_search_db
+goods_search_db.tmp
+goods_search_db*
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+.idea/
+.vscode/
