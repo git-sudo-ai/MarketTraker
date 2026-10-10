@@ -48,7 +48,6 @@ ADD_WINDOW_SIZE = "660x580"
 TG_ICON_DATA = "iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAADL0lEQVR4nK1UzWtcVRT/nXPvm4/MJOlMsTWC2iaNECIuShUx4MavinFRhGzEipWAbt1L/wO3XfgFgpsuxIXSFNtNsEixiKBVSMg0/ZgQQ81o+l5m5r17z5F7p5Ngcel5m/vOOb/f+bjnHsJQzp83WFjw4Tj5+dprnJjT4v0cRB6JduYNNuaKFP6L1jtT3z6IoahQZRDJ5LmfpqnW+AjAPFkLzftQiX4gNqBSGepc+P1Gs84HrfePrw6xHFmJ5Oi5X5+hWuMql6vzWvRUupmoOB0mHM5RV/Q0+FC9cTVgAjZwMK5f1+kvb05yrbYEpoZLOw7EBCIGaJDxICdiJrbGUH6v40SpETABGzii49FPf79g682TLt12RGzxgJj7dLtO0XWCw7UEFuKy0rhF1llqvTvzKh35ZOVlU0ouatGXQRbD+IGA4ESRFYJQ40yzjFNTY3jyYBkf/rCF22kulXKVXT9/xTLrItkEWvRjP5jCDRB6XpAVHmMlxouP1fHWzAG88GgNosClWynWd3LULCuMBXN/0arq81L0AjpwxOh9r5g+UMb8ZB1vHBuPmQRZ+ytHs2Lw/cZu9BlNwK7oIXBYYnMI3oOIKPeKZydG8N5TTcxNjKCW7FWKlU4fhSjqpQSXb6fR5hUUsWwO7XvqoCd/7DrcywVVu2/azBzupAVmD1ZwYT1F6+8cFcOxb0NhFb8FY6BQDbdzc6fA4qU2XvrqBpbbGf7sevxyt4cTh6sR8PXaTuxhjAzViBW/xUS0zEkl6EMfUTGEhyoWv2338fbFNpbvpHj64SrGSiZm9uPmLkYSGjgrJGAjhwh9rK7Yey7BHi6biPDcRBU/3+3hzHft2NxrW120M4fyflkUsIHjPwcyKENjp8ZL2Nx1sdxTx8ZC+bh8K8NoycCLd7betC7dXroRBhJnz/L0E2eOiJdr4YlIv7tHlovCEiExhDSXOB9lSxAvjitVC9EOGz6xuvLZOmN2llbffLwlWXYyGGy9YaESPikxaQCH6R6xpGWDoFY72ogkAROwgeN/WyODB3p/FbQWjq8CeD0sNmJ/WonmQBwXmxJtkPgr6uXfi40oRvoHtInEN4izdlgAAAAASUVORK5CYII="
 GH_ICON_DATA = "iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAACv0lEQVR4nI1US2sUQRCu6u6Z1fg6icJKZJNJWNaYZM1BBCEnb0nIZQ4iiIg3f4B4CgH/guLNg6LIXgRB8GYgHnII0TyWPHY3Go2GiChIjDszXSXV2dnEPMCCXYqq7/u6uqqmAfYaAoQaDrRQcrgP6R9TAEDitBUKrQr8i0DUvpVRVYJoolYur+zG7hIaUQCjdLZQOO2xPwrIV5XSx7ABYWAgsr+A8VmM0cjHcnkt5ewUcuq5zq5uo81L43utSRwDEUcALDmBklLoG8+DJIpXEpsMLi/OTqdc+XPAXFfXKaXNKwbIRvX6U2L6po32EdHIT3yJSU4wghVOWoiCMJSqSFt9z/NMlplmq/PT1zDmC8TJkLK2B5Ok1/kJFiUnGMEKx/UpDNFdraOjJ8uaF5XWh62185j8LlYqlfp+MwuCIMOmZUprnSdrN9Fi59LS+1V3LTJ8GbVukUYw4iMR6evr8yB0o966fhhqiUlOMIIVjnDTJgMy5BQiMzMg23GJTU62EZRKtjFi57uYw9txwQpHuE0hdlpuggysjrul61/fs3TgYqEGUicEzg2upExjRz6AnKAUEvEwQOk1vIF0hbZtbEwqZFDnh1x3WQqC5aYQxjROSAkD/0TEG0G+d6aC7x5uHbhtQRD44LXcBMBbRMQMEGFs30LaxGp17hMzv1CovgPRdaXxfue54o9cvnugKZLvHkD/6ByifsDMqLWWop4LVzQMlEpyKnIEt+EQ1kDhlXoUFTKeP6QTNdHYfiaj1zRDOxHVldYZa+1XTequy5dKbv1lElirTa8TJf2IOOwZcydO4tU/fiQ9caYZNpiIjDYZIP7MTIMLC1NfGge5T0SMZBrV+ZnJzRiKgHDS87zHR6zOpn2S6wDCBpF9wrG9JNjGk9J8AXZaKgzyChQKBX9HozNBcP7MftiDTP3Hw7ZH5C+myVc9YUeWwgAAAABJRU5ErkJggg=="
 QR_CODE_DATA = "iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAAAAACreq1xAAAQJklEQVR42rVZeZxU1ZX+zr33varqvZulu4FGdpqlWQwIY1Ro0YlJ0BATl6j5kZgY/WUcjWaMiRoVRNGoySQ6SZwAipE4cVwAIzpBIooa4wayI9ACAXvf6Kruqvfevd/8UVXdrfHPmftH1bu3zjn3vHO/e7YSghafGEoBiPIzLZZKfZJGKVoYAM59klULhPi/HYbSsM0MXglPneFU8HyfgBTqC4re+HDq3K5NVAMUc6aeeKVose/Uzve9wazRmeOIkKs+tcctDNjRPzvIL+MK7v0Exd3cAN3JgLd8inUVQwPETWxE/s1FmpMFAPT8dlEdHeJiGpP2Dz1y1KDGo4CANPX2HE1OGKYBFJiiSuZZ+XEmDiDkE5iYCtKZTCaTyaTDhbibIV2Q6Y3uFQ/xI0xlfuvHITuCdBAEmXQwBwl/cSbtGPJuLAzznEFqIp5gaABAYrpfawEgEA9WazoAiGkVAEjkzaUQhc7Pk5r+A1ACAAYAGKlv7NdO3LDnCgmLd64pe7bcuUvO2r8UDndsOnvHwct4if7x1zbd4lk5ZJy8Oc9p+9B8CzL11VZFZWufjNgvECI7DgBAiRUA6PogFomHmppKgHhv+9SZ8RA7cERad+a06XobQCsAiH37JACkRTAgEChUygmLcouqKLKr94pr1lrhX+tnByUPMhbVI+5ri2smrH912nes5+qgAEhRUqhcYR6HuW/n4IQ54NOxVK9+GwBSwJe+BFTfmEVgAOC68c1/GXNdv8HhnHDgzuQFiohIlgAAgmfK5o4+vLt8npfA3/7uKVosKKY5ZbEX4eWdvGD0s7F6Az/PChH5lMCAFkSQ0xCppfjzuQ9dN34jHO56AQCwrwI46ywAsz64b8OmL8fb/CjPStg8a7/A6jbtxFXm9xHjTjSmKotPYGhsdLVnhdLR5JAosa2obi6yunpYY2FJFnMjjaKy1YMFCt2zTgCqhMuJtLwOVx16tzb+3uj7V4oQXHTQS39t7bHT0i/O8FT9/o4zOzeebSEu8XqW1XEAhxJDcT88c4eEHrAokcwQufPrOAn0gt1hogTw/ehkKgKglMqzxvoFmqb6gbu8xwCCwseH3/KmR+fFHVa8dOENDd/CfaMe3BiLrIn6wt89eeayvpinALN70cBdbjJZgX1R99bBLiMJwFtU7IVJicIwwrY3RkjydayZWBoGpgIs8/a9Ll55GwMko+bmwax9gFGYe5unxTJ/HpmzobVKFlw5fwHG3ulX2Kvnzofnozc4v0bd0eX0Q6OGLOPtWOZq8UUvluOiaCI8DQr8jLEZXvMnV3YDH5F8Jst9P19DAT97GErjjuLT1LsnFQEQyo4fX7Gg1GMEpRm59/okHDWtsB7vHhpXkzYFs7Vh+i9vmfL2UtENBzwHASiuZA4ArYCQa1GT4cQBQ9w+eMOwEsA3GZGT8Rs+ifEk+QMAwzoZ8KcDXFPzGgJGFQDVrdpBXA9LxXShhCknLp6Ikpm4KkUF6BhT6VQS7I2HXmGZdAIAfGUiKdbJUDm/G3CFftZjTwrY+nFjY2Pr7lL9TPNPh389aq8dOmLIbdHfKqti+G1jmw2jcApKq8vU2GQURh2Nf9AjOmyGy+Hrku0t52kPXlXViOH/nfPYAIbmIGNHDkdLoy5s7gT6tG6GwogqQAEK3d1AqhBAOaptskgZAJFLjS9W1iJsAtCd99ihXH/Yz5x+e8Gf7KMr5mw8/pWoTzz+qaF8U/i95uWrrQJwDMae8aOuC60l3OgNvZf33TELZsaK9JXJf/7++lWTfkkbzYFGyCcwmawFcA4tWYflfCtv6dHkmEExHN9mKvt4Hgm8wuU4ja4MW7kW8wcOBar7AZPSXlgEF+HqBndfcFN6TerCCc7VBGmlF9eGCsDaDuD9BzI3y7pmiY7dH97EN9/lDeOCnqKeNe9v1VHg1rZ9dapDyDW5vAQX0JLkPVhAjsS27I4j8FL2YQIAoIKcmXUF5ALcSTLnuKaQlVjD0AgqZ/siO1MiYGafDc0RL/O37jQ6oxN/NyacMeLwW1ZRMLniSKtGWTJe559o1FKyuTQwLuw60heK4fCa6nfCQhMD8lfvVHhYzBN+fx6FDbwHAI7x69mVvfwuPJzSR/KmrJNTuJVbssTX8T1A43GGBrCBABaeNplMaY8QYsNc5PaVn0qbBNLKk9404joEkFIuZiwgNgjDKK6cWOtocxFJWWycUldb+yFu2Ldk0kWv7t+9Z/eBx7KuR3Pqnre+Pbl+362csGf3v02uO3iv9oDLJw3fu2P//r0H5mDN5If379lz4GxoAam1AIZoOwpAY/SYQ8fS430AqMm/eOFYNB6rOmUsCsah9Vh8VIXtBo4fLxkHAEigs63qFABFWeUyCACjcc5/td5oiUfePOLHeorv3XXxV1JGibgowoFLow618qn9+OgyafPFzXui1INRq1+Z+WMH5WDoOUdt4SJnzP1D5kODJFu8XEQuIKfjVr4KAC/xlwNxGgDwK5J0nAtgASPLevg4kzbihbiZu4GmHLAj1w4IPz87sN5vzBdO93/XfZWAO05sU5pwEKEtv0gYzISlKCgVC0sAB0CUOEdx2P5Y11XGBlpnYXPcg4dHSFrgPS7DWSS5aFCSjrp+B+k4AwpfoiUXQWVv3BIAYwY8dufHJwggGXU0dZSmPihoMvHIUSfM0GE9R2R8/NhJkdROgaspBwBODjubgLABSVRWVO8lvZOoGjY54tG+0aVEyMdhAIMH+Qw0AKVRT2t5AX7INxA/xIugARGDRxiRZMibcT6bysTDLdwiGmJwPQMGk/szWGY/BhcdTgCVdYMKyoGAAG6gFHCOuUytfym7EPIJEwO0GTnt8l0vF2H1vmtwDrsXTv/DrmPhX03hofDIrl271ots2H/tlLq6urq66TMrTdnMKTHjmcrZ46Tw5T2LTPXUJWFvrVnH0ADpKAIsTpwYP71WY07tWADhqyydDhRHUZk5BUAVMWVial+/Ml1dAIDmZkAvMH7U2CjGdEcZwGic8XDnsujmCX98be/VPb24bcxfYaP4Y8kp7uWnyx7hst7vnrZ1XRLS6zw178pQZfNMQuBI/8AD6aUFpy/Z8nT79+VWfUYO2JkYjvOGAQOem0XAnRhHDsOj/AUA2clr8L1/iOsHIcAWPgoAH+dgc/jNdotHx3uXnXhDLOpHbd/d/HTkovqauRfXRunyrjgSnskInVP7nowEOpo1ufG1wi94W5uUt1eJds+3bVFDz9WMRAMhV2fV+gU3QQPvcFl2voEk2TcKj/MhANjHb+ffYDnXw+vhvMH3csZATPG1DhCzLkpCj8LRIZnRHmxz6CFUNDIWJSgd5Vs0FsTHpFsFGOF5x/rGDjlS6pny0ojuY6tRUjLS5iqfkI9Di3jyIJ/FiOa+c+J3p3vSzVWyyYXOOZfujVyY6u3tPTX26/Qa8ZRsTd8UW9J3ZHgiLj/JnEy3Vokv16aTpMtHPZAI4QCokng67WJGJyIqMQAQA2AMgCDjxeIMgYKYywTx4p4+wPN9RBED6FgsV2QYQKHmSWOjMVBoO0N+cO/IkM57IVq9TDmh9/iIO1/2IwDHvPsfnfm2dfLzI0ve2fVPJS8kIr1l3pyH/c0B1WvzpqwKlx656wsWIZ9Abdae66GAPXlAnJU1dhO/OGD580hyClZwQ9ZN3YPp2dD7AMaQpfhPhhKadVdM3On9suHrC5+7UAMX1zgNMOLQhHOi2W6LfcnWpdrWfrHj/rASC+c2bJRm51iSqLmEgkh2/EU6UcHF01y2Xs5wElbyaehBONiSVTSB5wcDuSGbypJpALhr4IdjQLL/UACUm0Q2nT99mBVK+EZfMjy0d+jpwWVNDc+NntnzOs4ootCT4vSGsbUTLZIXp99t2fdC6Jmz4u83iW2/QG0sOLWGeQ3n4FdcD62wPbthNV7gfZhNkt/At7gd2E+SPK4B3JNFyLlZd97IRQAmkFVYM5AfAt2dHQBwdESkKCctOjr7tNfK0At1HLEqdrU65VRbdcaPTIse4lqkF4bCwhYztNLPnGLDsbYEQMh1anKGp6qioUVKKVVcUV5eXlYiKKxIKK+ivLQ8gauY7mifW15RWl46tbGjuePHpZfaxpoyXymllC4vfaqrrb3b2q62TC7q9QK9LpkEAPTkNU6lANcBQAPwytHaCQAlVQBcd6eKdyZzhJ2IlwIASgHAaJy7qRjRmpMq68MFiL3/Iwlg7NeuCbzgO82eMGq4GiuqH3zRY+cCLa5+84eLwlAe+FwGYnqvbI341H/4Dl54yzn2Mwufbdk7tIwkxwNYygaghdfnlX+I2wDBX7PUo/AsV2Z/+A0D49QHT3+qNFsw7Cfhr3tFbzaBjrr1V6fblS0+lo98A9MvaltlYTee3K3F8aTdtmXCFT2Es772nPpe8XxohPzdp/pNPyHJyoH5U3w4/3gFWwdF/5f4Q0xh90i8yIehB4CdMIWzB5W37YVo2Z0KZNoQKggYFoXVZ3ohtPnwWBD11kcf9Khsu0NY9/m5JPFe2X4pnqH+p3RaFfNVQP9YhOV8EQD+/A+mvRaXMyLn5vPXrSTJVBUAYCY5Co/lA33GS+VaBMply/RCa1064ycASYfidAEiEwGwSYmVBGlTYNNIpkJF3UMoxrxCFw7rSuQLH1EX7tJOXOXrxQQgruT1ikL+/o55G2jNDc/FM5NeFRJw9sQ56VWzlv+2fm3T2T3f8qkAtkFFly8H9YvBEPS3whqbASDK9ztlZBmQaj4MAG0tQDEQgw9PxxswsnooSqrLk7Zt4OCGjgBQObjN4otyQn+gT1C48u3PrS+DWBjxA1/wLyf2mG0Xx5/Tv+reY95a4q1NLNt5yTcypu/6LuKpA9aDhDcusHlvMwsKgqpuLsRy/hkVfTwPP8qexTfhYwo5KtdiZU0+2T0f/06ShQOK/pqB6W/8Kkh/n1WFPy9v8RHYWLSud282LRvSUj8twpC0d/1RpT563l9ZdFC9hNC478jGjwyHX0YVnpYrHidmOBkAUNLFhVjOTVmxN5JkHIDCFHIifj+AoFcHpd8BL0IMcwYVjwA5K66duGGaAFA2U2sw8rZbHS7oOtwuADEzlojaPyqYrvZ1jarqgj/VhLqppWhCbOuQJjixIQRachV9NLB3Pe5mbvoAFMxHvBgeppCk5ZMY3cc5+BmfR1WSjiuxkKmhAASzBmvIjJfreVETgIuUkbSORDvtqD0TMhBSfGMSQNyIDYE+P/Sc0WFf3LdWKxPCSL5V9fGsQW1nE+HtpeWbhl27rUfDeFp+tuKPtx+vgw5WXHru3lgM68JV09K6c75W9tIDH0wreGb49zcvvW3fNP/FGqeQzWAPDvY2veg6jBB7PgSApMNIKY+SHwJoRnEpgNE4eQCwhwGkxh09iDHDEcXHtB9EGgDE/UPrfvbMxpfjixOvHFdOqL9SaOXQmx4g0ekTHKBgZcduY6GgwhkzWjbHvpx4raHucx0v6fOL+P/x5wI+4+8PWhhY9ncscx1bpQY6wJ8iVYoWWgD8L5Mvhqo523R9AAAAAElFTkSuQmCC"
-STATUS_BAR_ICON_DATA = "iVBORw0KGgoAAAANSUhEUgAAAEgAAAAkCAYAAAAq23xmAAAEH0lEQVR4nO2YXYiWRRTHf7vluq5lu1qtqOUHIaKElRoGhlmUdGNpeeGFdCOZaKWYVDcJht0UfSyFYOSFFyFBKBGFkVFEflAkuixCiohJqCEpaeVXGyf+I+MwM++8rXfNDx7efWbOeWbmPOfrWahUKpVKpVKpVCK0BPczgA7gW+DvmAIwS3rfJWRs7n7gArAH6AduB8ZLvtWTtbnTwEHgT8poA6YC04ExwFlgP7AT+C2h06GzheuHdujXvnelFt8sIVs4xgjN23VbVAK6NG9Gdrzu6aWup2jMIzKk07kcPOM1GTBkasH6/hU6zhXsrZwDHs1s8Jw2uTDjYSbzkDf2rMbuBW4ChgOdMvhd8kbb2KKMcVZIpk86bTqIecRI4C3N27MGBbqtWqszuLp0DQM2SX9eZg//CprQxsT8e5q/CHyakFkrmVu8sZUas83EGAwcAs5EDmfcI/3tiXnHYsn10BxjdKZPct7j6FMstwbj1wG/y3jr5d52MB97+AHgWKDvDNSdWfdNyQyLPLNXHmje14iP9ZxRlGGeeERREa4dZWXEA4zRGjf3nqi/7dfnBo1bzqFJAzkXHxx5uy6/lDBJ8hbWJbj86KeELFPkHbOD8UV6kBnh+sQmpkl3ZjDeKMS6Nf9OZG6BnmkvptQjzNu+KpC9T+vayymmXUpvBOPb5YqObxROPi8kwmSVxmd6SbpL3vE48BPwfiK/uJxmSbaUH2UkSwsp7EWfAk6oDWiKr6XY4r2VfnlCmBBv1L3J/qDDholuTYOyujcTfj2SGdrE/r+Ujnl6DNvfR95LSxJrmpDL3eqFxEQ1WZ95Mju8kHSeZyH2gRb2cQ3lM8ADwIPAHGAu8Jw86bjCKeRCg73GyFU64wm1KW8Du/kPjAtyyUs6tL9wq8ryu7qfLB37JZGDUlWiTSEcS+TLvW68BNvXUeBwomR3q6QfiRSEYlwSfln31qNsTbi/xbqxRDpDInIlVWy8Nr40GJ8h3fmFe++U/IaE8XZr/k4GyDYlO7eghUOqClgn+yGwr8nWIdakhuXcDH5e30cNmzgvN1ooh6zWnCX+AfOkNrZOD705ItOhuVfURD49AANNV4iaJ4asK/kMUM60yvRLJA+5/uhAJnk3xUivyvRm3p7LHXZNSMg8r8OPyKzVlzFiu3KGzT+cyS29krk70S1bOhhLE+QseRL4WV/t7is/xhZ9xJ7UJ0aMIYr/HiXPdlW2NhUCVwysJ/o1ov+XKqS1H18A36s4HFU/85jneXPVNoTd8lj9a2RZwsD93ufUq5nzXsWLOvQdGZnRknHVLMYyyZySJ7nrvPLWmsJvp0Hq6A9Heqn1mRD+XMY8FqzvXxf1e9w3YEnSaymw5rWSKaVFJdo88RLwR+YffL4O13APlUqlUqlUKhX+x/wDF7sykhE2uAUAAAAASUVORK5CYII="
 
 CACHED_ASSETS = {}
 
@@ -632,116 +631,6 @@ def get_gh_image(master):
     CACHED_IMAGES["gh_img"] = img
     return img
 
-def setup_macos_status_bar(root):
-    if sys.platform != "darwin":
-        return None
-    try:
-        import ctypes
-        import ctypes.util
-        import base64
-
-        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
-        appkit = ctypes.cdll.LoadLibrary(ctypes.util.find_library("AppKit"))
-
-        def get_sel(name):
-            objc.sel_registerName.restype = ctypes.c_void_p
-            objc.sel_registerName.argtypes = [ctypes.c_char_p]
-            return objc.sel_registerName(name.encode("utf-8"))
-
-        def get_class(name):
-            objc.objc_getClass.restype = ctypes.c_void_p
-            objc.objc_getClass.argtypes = [ctypes.c_char_p]
-            return objc.objc_getClass(name.encode("utf-8"))
-
-        class NSSize(ctypes.Structure):
-            _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
-
-        objc.objc_allocateClassPair.restype = ctypes.c_void_p
-        objc.objc_allocateClassPair.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
-        objc.objc_registerClassPair.restype = None
-        objc.objc_registerClassPair.argtypes = [ctypes.c_void_p]
-        objc.class_addMethod.restype = ctypes.c_bool
-        objc.class_addMethod.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p]
-
-        NSObject = get_class("NSObject")
-        cls_name = f"TrayHandler_{int(time.time() * 1000)}".encode("utf-8")
-        TrayTargetCls = objc.objc_allocateClassPair(NSObject, cls_name, 0)
-
-        def on_tray_click(_self, _cmd, _sender):
-            def _restore():
-                try:
-                    root.deiconify()
-                    root.lift()
-                    root.attributes("-topmost", True)
-                    root.attributes("-topmost", False)
-                    root.focus_force()
-                    NSApp = get_class("NSApplication")
-                    app = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))(NSApp, get_sel("sharedApplication"))
-                    ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool))(app, get_sel("activateIgnoringOtherApps:"), True)
-                except Exception:
-                    pass
-            root.after(0, _restore)
-
-        CB_TYPE = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
-        cb_func = CB_TYPE(on_tray_click)
-
-        click_sel = get_sel("onTrayClick:")
-        objc.class_addMethod(TrayTargetCls, click_sel, ctypes.cast(cb_func, ctypes.c_void_p), b"v@:@")
-        objc.objc_registerClassPair(TrayTargetCls)
-
-        target_inst = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))(TrayTargetCls, get_sel("new"))
-
-        NSStatusBar = get_class("NSStatusBar")
-        bar = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))(NSStatusBar, get_sel("systemStatusBar"))
-        status_item = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_double))(bar, get_sel("statusItemWithLength:"), ctypes.c_double(-1.0))
-        ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))(status_item, get_sel("retain"))
-
-        button = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))(status_item, get_sel("button"))
-        ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))(button, get_sel("setTarget:"), target_inst)
-        ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))(button, get_sel("setAction:"), click_sel)
-
-        png_bytes = base64.b64decode(STATUS_BAR_ICON_DATA)
-        NSData = get_class("NSData")
-        data_fn = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t))
-        ns_data = data_fn(NSData, get_sel("dataWithBytes:length:"), png_bytes, len(png_bytes))
-
-        NSImage = get_class("NSImage")
-        alloc_fn = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
-        img_alloc = alloc_fn(NSImage, get_sel("alloc"))
-        init_fn = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
-        ns_image = init_fn(img_alloc, get_sel("initWithData:"), ns_data)
-
-        size_fn = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, NSSize))
-        size_fn(ns_image, get_sel("setSize:"), NSSize(36.0, 18.0))
-
-        tmpl_fn = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool))
-        tmpl_fn(ns_image, get_sel("setTemplate:"), True)
-        ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))(ns_image, get_sel("retain"))
-
-        set_img_fn = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
-        set_img_fn(button, get_sel("setImage:"), ns_image)
-        ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong))(button, get_sel("setImagePosition:"), 1)
-
-        NSString = get_class("NSString")
-        alloc_str = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))(NSString, get_sel("alloc"))
-        tip_bytes = "Маркетплейс Трекер (WB / Ozon)".encode("utf-8")
-        ns_tip = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_ulong, ctypes.c_ulong))(alloc_str, get_sel("initWithBytes:length:encoding:"), tip_bytes, len(tip_bytes), 4)
-        ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))(button, get_sel("setToolTip:"), ns_tip)
-
-        def cleanup():
-            try:
-                remove_fn = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
-                remove_fn(bar, get_sel("removeStatusItem:"), status_item)
-                release_fn = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p))
-                release_fn(status_item, get_sel("release"))
-                release_fn(ns_image, get_sel("release"))
-            except Exception:
-                pass
-
-        return (cleanup, cb_func, target_inst, status_item, ns_image)
-    except Exception:
-        return None
-
 class AddWindow:
     def __init__(self, parent, on_added_cb):
         self.win = tk.Toplevel(parent)
@@ -1096,8 +985,6 @@ class App:
         self.setup()
         self.load_items()
         self.start_timer()
-        self.status_bar_refs = setup_macos_status_bar(self.root)
-        self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
 
         if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
             self.open_add_dialog(initial_url=sys.argv[1])
@@ -1518,14 +1405,6 @@ class App:
             self.root.after(0, update_ui)
 
         threading.Thread(target=worker, daemon=True).start()
-
-    def on_window_close(self):
-        if self.status_bar_refs and callable(self.status_bar_refs[0]):
-            try:
-                self.status_bar_refs[0]()
-            except Exception:
-                pass
-        self.root.destroy()
 
 def main():
     root = tk.Tk()
