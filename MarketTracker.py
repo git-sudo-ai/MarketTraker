@@ -15,10 +15,17 @@ import tkinter as tk
 from tkinter import ttk
 
 try:
-    from PIL import Image, ImageTk
+    from PIL import Image, ImageTk, ImageDraw
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
+
+if sys.platform == "darwin":
+    try:
+        import ctypes
+        import ctypes.util
+    except Exception:
+        pass
 
 __version__ = "1.2"
 __license__ = "GPL-2.0"
@@ -355,6 +362,7 @@ def fetch_wb_details(nm_str: str):
     default_img = default_img_cands[0]
 
     detected_price = None
+    detected_stock = ""
 
     safari_html = extract_safari_tab_source(f"wildberries.ru/catalog/{nm}", str(nm))
     if safari_html:
@@ -364,6 +372,18 @@ def fetch_wb_details(nm_str: str):
             if 50 <= digits <= 2000000:
                 detected_price = digits
                 break
+        sn_wb = re.search(r'"stockNumber":\s*\{\s*"text":\s*"([^"]+)"', safari_html)
+        if sn_wb:
+            detected_stock = f"Остаток: {sn_wb.group(1).strip()} шт."
+        else:
+            m_wb = re.search(r'(\d+)\s*(?:шт|единиц\w*|штук\w*)\s*осталось', safari_html, re.IGNORECASE)
+            if m_wb:
+                detected_stock = f"Остаток: {m_wb.group(1)} шт."
+            elif "нет в наличии" in safari_html.lower() or "товар закончился" in safari_html.lower():
+                detected_stock = "Нет в наличии"
+
+    if not detected_stock and card_data:
+        detected_stock = "В наличии"
 
     categories = {}
 
@@ -383,6 +403,7 @@ def fetch_wb_details(nm_str: str):
                 "image_url": cimg,
                 "image_candidates": c_cands,
                 "price": detected_price if is_cur else None,
+                "stock": detected_stock if is_cur else "В наличии",
                 "is_default": is_cur
             })
         categories["Цвет / Модель"] = color_variants
@@ -396,6 +417,7 @@ def fetch_wb_details(nm_str: str):
             "image_url": default_img,
             "image_candidates": default_img_cands,
             "price": detected_price,
+            "stock": detected_stock,
             "is_default": True
         }]
 
@@ -408,6 +430,7 @@ def fetch_wb_details(nm_str: str):
             "image_url": default_img,
             "image_candidates": default_img_cands,
             "price": detected_price,
+            "stock": detected_stock,
             "is_default": True
         }]
 
@@ -417,6 +440,7 @@ def fetch_wb_details(nm_str: str):
         "default_image": default_img,
         "image_candidates": default_img_cands,
         "detected_price": detected_price,
+        "detected_stock": detected_stock,
         "categories": categories
     }
 
@@ -430,6 +454,7 @@ def clean_slug_title(slug_str: str):
 def parse_ozon_html(html: str, prod_id: str, original_url: str):
     title = None
     detected_price = None
+    detected_stock = ""
     default_img = ""
     gallery_imgs = []
     categories = {}
@@ -437,6 +462,18 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
     state_map = {}
     for st, _q, content in re.findall(r'<div id="state-([^"]+)" data-state=([\'"])(.*?)\2>', html):
         state_map[st] = content
+
+    sn_m = re.search(r'"stockNumber":\s*\{\s*"text":\s*"([^"]+)"', html)
+    if sn_m:
+        detected_stock = f"Остаток: {sn_m.group(1).strip()} шт."
+    else:
+        m_ost = re.search(r'(\d+)\s*(?:шт|единиц\w*|штук\w*)\s*осталось', html, re.IGNORECASE)
+        if m_ost:
+            detected_stock = f"Остаток: {m_ost.group(1)} шт."
+        elif 'data-widget="webOutOfStock"' in html or '"isOutOfStock":true' in html:
+            detected_stock = "Нет в наличии"
+        elif 'schema.org/InStock' in html or '"availability":"http://schema.org/InStock"' in html:
+            detected_stock = "В наличии"
 
     for k, v in state_map.items():
         if "webProductHeading" in k:
@@ -504,6 +541,15 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
                             v_cands.append(v_cover)
                         is_cur = (sku == str(prod_id))
                         lbl_txt = str(opt_label) + (" (текущий)" if is_cur else "")
+                        v_avail = v_item.get("availability")
+                        if v_avail == "outOfStock":
+                            v_stock = "Нет в наличии"
+                        elif is_cur and detected_stock:
+                            v_stock = detected_stock
+                        elif v_avail == "inStock":
+                            v_stock = "В наличии"
+                        else:
+                            v_stock = detected_stock
                         var_list.append({
                             "label": lbl_txt,
                             "variant_name": f"{cat_name}: {opt_label}",
@@ -512,6 +558,7 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
                             "image_url": v_cands[0] if v_cands else (default_img or ""),
                             "image_candidates": v_cands or ([default_img] if default_img else []),
                             "price": v_price or detected_price,
+                            "stock": v_stock,
                             "is_default": is_cur
                         })
                     if var_list:
@@ -549,6 +596,7 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
             "image_url": default_img,
             "image_candidates": [default_img] if default_img else [],
             "price": detected_price,
+            "stock": detected_stock,
             "is_default": True
         }]
 
@@ -558,12 +606,13 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
         "default_image": default_img,
         "image_candidates": [default_img] if default_img else [],
         "detected_price": detected_price,
+        "detected_stock": detected_stock,
         "categories": categories
     }
 
 def fetch_ozon_details(clean_url: str):
     resolved_url = unshorten_url(clean_url)
-    ozon_match = re.search(r'/product/(?:([^/]+)-)?(\d+)', resolved_url)
+    ozon_match = re.search(r'/product/(?:([^/]+)?-)?(\d+)', resolved_url)
     if ozon_match:
         slug = ozon_match.group(1) or ""
         prod_id = ozon_match.group(2) or ""
@@ -603,6 +652,7 @@ def fetch_ozon_details(clean_url: str):
         "default_image": "",
         "image_candidates": [],
         "detected_price": None,
+        "detected_stock": "",
         "categories": {
             "Вариант": [{
                 "label": "Основной вариант",
@@ -612,6 +662,7 @@ def fetch_ozon_details(clean_url: str):
                 "image_url": "",
                 "image_candidates": [],
                 "price": None,
+                "stock": "",
                 "is_default": True
             }]
         }
@@ -957,6 +1008,10 @@ class AddWindow:
             if not self.tgt_price_var.get().strip():
                 self.tgt_price_var.set(str(int(var_price * 0.95)))
 
+        var_stock = item.get("stock") or self.inspected_data.get("detected_stock", "")
+        if var_stock:
+            self.status_lbl.config(text=f"Выбран вариант: {item.get('label')}. {var_stock}", fg="#1e293b")
+
         img_url = item.get("image_candidates") or item.get("image_url") or self.inspected_data.get("default_image", "")
         self.load_preview_async(img_url)
 
@@ -1002,6 +1057,7 @@ class AddWindow:
 
         chosen_img = v_item.get("image_url") or d.get("default_image", "")
         chosen_cands = v_item.get("image_candidates") or ([chosen_img] if chosen_img else [])
+        stock_val = v_item.get("stock") or d.get("detected_stock", "")
 
         item = {
             "id": f"{mp.lower()}_{art}_{int(time.time())}",
@@ -1013,6 +1069,7 @@ class AddWindow:
             "image_candidates": chosen_cands,
             "target_price": target_price,
             "current_price": current_price,
+            "stock": stock_val,
             "status": "Готово к покупке" if current_price <= target_price else "Отслеживается",
             "last_checked": datetime.now().strftime("%H:%M:%S"),
             "notified": bool(current_price <= target_price)
@@ -1020,6 +1077,121 @@ class AddWindow:
 
         self.on_added_cb(item)
         self.win.destroy()
+
+class MacStatusBar:
+    def __init__(self):
+        self.status_item = None
+        self.sb = None
+        self.img_normal = None
+        self.img_gold = None
+        self.set_img_fn = None
+        self.set_tip_fn = None
+        self.tip_fn = None
+        self.NSString = None
+        self.objc = None
+        self.appkit = None
+        self.sel_set_image = None
+        self.sel_set_tip = None
+        self.sel_utf8 = None
+        self.setup()
+
+    def make_icon(self, is_gold):
+        im = Image.new("RGBA", (18, 18), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        if is_gold:
+            d.ellipse([2, 2, 15, 15], fill=(235, 198, 86, 240), outline=(202, 160, 48, 255), width=2)
+        else:
+            d.ellipse([2, 2, 15, 15], outline=(0, 0, 0, 255), width=2)
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+        raw = buf.getvalue()
+
+        data_sel = self.objc.sel_registerName(b"dataWithBytes:length:")
+        data_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t))
+        nsdata = data_fn(self.NSData, data_sel, raw, len(raw))
+
+        alloc_sel = self.objc.sel_registerName(b"alloc")
+        alloc_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        alloc_img = alloc_fn(self.NSImage, alloc_sel)
+
+        init_sel = self.objc.sel_registerName(b"initWithData:")
+        init_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        nsimg = init_fn(alloc_img, init_sel, nsdata)
+
+        tmpl_sel = self.objc.sel_registerName(b"setTemplate:")
+        tmpl_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool))
+        tmpl_fn(nsimg, tmpl_sel, not is_gold)
+
+        ret_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+        ret_fn(nsimg, self.objc.sel_registerName(b"retain"))
+        return nsimg
+
+    def setup(self):
+        if sys.platform != "darwin" or not HAS_PIL:
+            return
+        try:
+            self.objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+            self.appkit = ctypes.cdll.LoadLibrary(ctypes.util.find_library("AppKit"))
+            self.objc.objc_getClass.restype = ctypes.c_void_p
+            self.objc.objc_getClass.argtypes = [ctypes.c_char_p]
+            self.objc.sel_registerName.restype = ctypes.c_void_p
+            self.objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+            self.NSData = self.objc.objc_getClass(b"NSData")
+            self.NSImage = self.objc.objc_getClass(b"NSImage")
+            self.NSString = self.objc.objc_getClass(b"NSString")
+            NSStatusBar = self.objc.objc_getClass(b"NSStatusBar")
+
+            self.img_normal = self.make_icon(is_gold=False)
+            self.img_gold = self.make_icon(is_gold=True)
+
+            sb_sel = self.objc.sel_registerName(b"systemStatusBar")
+            send_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+            self.sb = send_fn(NSStatusBar, sb_sel)
+
+            item_sel = self.objc.sel_registerName(b"statusItemWithLength:")
+            item_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_double))
+            self.status_item = item_fn(self.sb, item_sel, ctypes.c_double(-1.0))
+            send_fn(self.status_item, self.objc.sel_registerName(b"retain"))
+
+            self.sel_set_image = self.objc.sel_registerName(b"setImage:")
+            self.sel_set_tip = self.objc.sel_registerName(b"setToolTip:")
+            self.sel_utf8 = self.objc.sel_registerName(b"stringWithUTF8String:")
+
+            self.set_img_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+            self.set_tip_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+            self.tip_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p))
+
+            NSApp = send_fn(self.objc.objc_getClass(b"NSApplication"), self.objc.sel_registerName(b"sharedApplication"))
+            act_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+            act_fn(self.status_item, self.objc.sel_registerName(b"setTarget:"), NSApp)
+            act_fn(self.status_item, self.objc.sel_registerName(b"setAction:"), self.objc.sel_registerName(b"unhide:"))
+
+            self.update_status(0)
+        except Exception:
+            self.status_item = None
+
+    def update_status(self, ready_count):
+        if not self.status_item or not self.sb:
+            return
+        try:
+            img = self.img_gold if ready_count > 0 else self.img_normal
+            self.set_img_fn(self.status_item, self.sel_set_image, img)
+            tip_text = f"Маркетплейс Трекер: {ready_count} товаров со скидкой!" if ready_count > 0 else "Маркетплейс Трекер"
+            tip_obj = self.tip_fn(self.NSString, self.sel_utf8, tip_text.encode("utf-8"))
+            self.set_tip_fn(self.status_item, self.sel_set_tip, tip_obj)
+        except Exception:
+            pass
+
+    def cleanup(self):
+        if self.sb and self.status_item:
+            try:
+                rem_sel = self.objc.sel_registerName(b"removeStatusItem:")
+                rem_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+                rem_fn(self.sb, rem_sel, self.status_item)
+            except Exception:
+                pass
+            self.status_item = None
 
 class App:
     def __init__(self, root):
@@ -1031,10 +1203,12 @@ class App:
         self.drawer_expanded = False
         self.drawer_animating = False
         self.drawer_current_h = 0
+        self.status_bar_mgr = MacStatusBar()
 
         self.root.title("Маркетплейс Трекер Цен (WB / Ozon)")
         self.root.geometry(DEFAULT_WINDOW_SIZE)
         self.root.minsize(680, 560)
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.setup()
         self.load_items()
@@ -1042,6 +1216,11 @@ class App:
 
         if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
             self.open_add_dialog(initial_url=sys.argv[1])
+
+    def on_close(self):
+        if self.status_bar_mgr:
+            self.status_bar_mgr.cleanup()
+        self.root.destroy()
 
     def setup(self):
         top_bar = tk.Frame(self.root, bg="#ffffff", padx=14, pady=10, relief="solid", bd=1)
@@ -1201,6 +1380,8 @@ class App:
         ready_count = 0
 
         if total == 0:
+            if self.status_bar_mgr:
+                self.status_bar_mgr.update_status(0)
             self.count_lbl.config(text="Отслеживается: 0 товаров")
             empty_box = tk.Frame(self.cards_frame, bg="#ffffff", padx=24, pady=32, relief="solid", bd=1)
             empty_box.pack(fill="x", padx=16, pady=32)
@@ -1271,6 +1452,11 @@ class App:
             tgt_txt = f"{target_p:,} ₽".replace(",", " ") if target_p is not None else "-"
             tk.Label(price_row, text=f"Цель: не выше {tgt_txt}", font=("TkDefaultFont", 9), fg="#475569", bg=card_bg).pack(side="left", padx=(0, 16))
 
+            stock_val = item.get("stock", "")
+            if stock_val:
+                stock_color = "#dc2626" if "нет" in stock_val.lower() else "#475569"
+                tk.Label(price_row, text=stock_val, font=("TkDefaultFont", 9), fg=stock_color, bg=card_bg).pack(side="left", padx=(0, 16))
+
             if is_ready:
                 tk.Label(price_row, text="★ ЦЕЛЬ ДОСТИГНУТА! Пора покупать", font=("TkDefaultFont", 9, "bold"), fg="#166534", bg=card_bg).pack(side="left")
 
@@ -1320,6 +1506,8 @@ class App:
         else:
             self.root.title("Маркетплейс Трекер Цен (WB / Ozon)")
         self.count_lbl.config(text=status_text)
+        if self.status_bar_mgr:
+            self.status_bar_mgr.update_status(ready_count)
 
     def load_card_thumbnail_async(self, item_id, image_url, target_label):
         if item_id in self.card_thumbnails:
@@ -1435,19 +1623,27 @@ class App:
                         item["title"] = res["title"]
 
                     var_p = None
+                    var_stock = None
                     var_tgt = item.get("variant")
                     sku = item["id"].split("_")[1] if "_" in item.get("id", "") else ""
                     for vlist in res.get("categories", {}).values():
                         for v in vlist:
                             m_name = bool(var_tgt and (v.get("variant_name") == var_tgt or v.get("label") == var_tgt))
                             m_sku = bool(sku and str(v.get("nm")) == sku)
-                            if (m_name or m_sku) and v.get("price") is not None:
-                                var_p = v["price"]
+                            if m_name or m_sku:
+                                if v.get("price") is not None:
+                                    var_p = v["price"]
+                                if v.get("stock"):
+                                    var_stock = v["stock"]
                                 break
-                        if var_p is not None:
+                        if var_p is not None and var_stock:
                             break
 
                     new_p = var_p if var_p is not None else res.get("detected_price")
+                    new_stock = var_stock if var_stock else res.get("detected_stock")
+
+                    if new_stock:
+                        item["stock"] = new_stock
 
                     if new_p is not None:
                         item["current_price"] = new_p
