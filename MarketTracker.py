@@ -238,22 +238,78 @@ def extract_safari_tab_source(target_url, prod_id, original_url=""):
     if sys.platform != "darwin":
         return None
     try:
-        id_chk = str(prod_id) if prod_id else ""
-        url_chk = str(target_url) if target_url else ""
-        orig_chk = str(original_url) if original_url else ""
+        id_chk = str(prod_id).replace("\\", "\\\\").replace("\"", "\\\"") if prod_id else ""
+        url_chk = str(target_url).replace("\\", "\\\\").replace("\"", "\\\"") if target_url else ""
+        orig_chk = str(original_url).replace("\\", "\\\\").replace("\"", "\\\"") if original_url else ""
+
+        load_url = ""
+        if target_url and target_url.startswith(("http://", "https://")):
+            load_url = target_url
+        elif original_url and original_url.startswith(("http://", "https://")):
+            load_url = original_url
+        elif prod_id:
+            if "wildberries" in str(target_url):
+                load_url = f"https://www.wildberries.ru/catalog/{prod_id}/detail.aspx"
+            else:
+                load_url = f"https://www.ozon.ru/product/{prod_id}/"
+        load_url = load_url.replace("\\", "\\\\").replace("\"", "\\\"")
+
         script = f'''
-        tell application "Safari"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    set u to URL of t
-                    if ("{id_chk}" is not "" and u contains "{id_chk}") or ("{url_chk}" is not "" and u contains "{url_chk}") or ("{orig_chk}" is not "" and u contains "{orig_chk}") then
-                        return source of t
-                    end if
-                end repeat
-            end repeat
+        tell application "System Events"
+            set isRunning to (name of processes) contains "Safari"
         end tell
+        if isRunning then
+            tell application "Safari"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        set u to URL of t
+                        if ("{id_chk}" is not "" and u contains "{id_chk}") or ("{url_chk}" is not "" and u contains "{url_chk}") or ("{orig_chk}" is not "" and u contains "{orig_chk}") then
+                            return source of t
+                        end if
+                    end repeat
+                end repeat
+            end tell
+        end if
+
+        if "{load_url}" is not "" then
+            tell application "System Events"
+                set isRunning to (name of processes) contains "Safari"
+            end tell
+            if not isRunning then
+                tell application "Safari" to launch
+                delay 0.8
+            end if
+            tell application "Safari"
+                if (count of windows) = 0 then
+                    set newDoc to (make new document with properties {{URL:"{load_url}"}})
+                    repeat 15 times
+                        delay 0.25
+                        set src to source of newDoc
+                        if src contains "webPrice" or src contains "state-webPrice" then
+                            exit repeat
+                        end if
+                    end repeat
+                    set finalSrc to source of newDoc
+                    close newDoc
+                    return finalSrc
+                else
+                    set newTab to (make new tab at end of tabs of window 1 with properties {{URL:"{load_url}"}})
+                    repeat 15 times
+                        delay 0.25
+                        set src to source of newTab
+                        if src contains "webPrice" or src contains "state-webPrice" then
+                            exit repeat
+                        end if
+                    end repeat
+                    set finalSrc to source of newTab
+                    close newTab
+                    return finalSrc
+                end if
+            end tell
+        end if
+        return ""
         '''
-        res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=4)
+        res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=8)
         html = res.stdout
         return html if html and len(html) > 500 else None
     except Exception:
@@ -1366,10 +1422,24 @@ class App:
             for item in self.items:
                 res = inspect_product(item["url"])
                 if res:
-                    new_p = res.get("detected_price")
                     item["last_checked"] = datetime.now().strftime("%H:%M:%S")
                     if res.get("title") and "Товар" not in res.get("title"):
                         item["title"] = res["title"]
+
+                    var_p = None
+                    var_tgt = item.get("variant")
+                    sku = item["id"].split("_")[1] if "_" in item.get("id", "") else ""
+                    for cname, vlist in res.get("categories", {}).items():
+                        for v in vlist:
+                            m_name = bool(var_tgt and (v.get("variant_name") == var_tgt or v.get("label") == var_tgt))
+                            m_sku = bool(sku and str(v.get("nm")) == sku)
+                            if (m_name or m_sku) and v.get("price") is not None:
+                                var_p = v["price"]
+                                break
+                        if var_p is not None:
+                            break
+
+                    new_p = var_p if var_p is not None else res.get("detected_price")
 
                     if new_p is not None:
                         item["current_price"] = new_p
