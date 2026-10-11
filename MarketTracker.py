@@ -271,7 +271,17 @@ def extract_safari_tab_source(target_url, prod_id, original_url=""):
                 repeat with w in windows
                     repeat with t in tabs of w
                         set u to URL of t
-                        if ("{id_chk}" is not "" and u contains "{id_chk}") or ("{url_chk}" is not "" and u contains "{url_chk}") or ("{orig_chk}" is not "" and u contains "{orig_chk}") then
+                        set isMatch to false
+                        if "{id_chk}" is not "" then
+                            if (u contains ("-" & "{id_chk}" & "/") or u contains ("/" & "{id_chk}" & "/") or u contains ("-" & "{id_chk}" & "?") or u contains ("/" & "{id_chk}" & "?")) then
+                                set isMatch to true
+                            end if
+                        else
+                            if ("{url_chk}" is not "" and u contains "{url_chk}") or ("{orig_chk}" is not "" and u contains "{orig_chk}") then
+                                set isMatch to true
+                            end if
+                        end if
+                        if isMatch then
                             return source of t
                         end if
                     end repeat
@@ -463,9 +473,28 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
     for st, _q, content in re.findall(r'<div id="state-([^"]+)" data-state=([\'"])(.*?)\2>', html):
         state_map[st] = content
 
+    fr_val = None
+    fr_matches = re.findall(r'"sku":\s*"' + re.escape(str(prod_id)) + r'"[^}]*"freeRest":\s*(\d+)', html)
+    if not fr_matches:
+        fr_matches = re.findall(r'"freeRest":\s*(\d+)[^}]*"sku":\s*"' + re.escape(str(prod_id)) + r'"', html)
+    if not fr_matches:
+        fr_matches = re.findall(r'"freeRest":\s*(\d+)', html)
+    if fr_matches:
+        try:
+            fr_val = int(fr_matches[0])
+        except Exception:
+            pass
+
     sn_m = re.search(r'"stockNumber":\s*\{\s*"text":\s*"([^"]+)"', html)
-    if sn_m:
-        detected_stock = f"Остаток: {sn_m.group(1).strip()} шт."
+    sn_val = int(sn_m.group(1).strip()) if sn_m and sn_m.group(1).strip().isdigit() else None
+
+    exact_count = fr_val if fr_val is not None else sn_val
+
+    if exact_count is not None:
+        if exact_count > 0:
+            detected_stock = f"Остаток: {exact_count} шт."
+        else:
+            detected_stock = "Нет в наличии"
     else:
         m_ost = re.search(r'(\d+)\s*(?:шт|единиц\w*|штук\w*)\s*осталось', html, re.IGNORECASE)
         if m_ost:
@@ -1640,7 +1669,13 @@ class App:
                             break
 
                     new_p = var_p if var_p is not None else res.get("detected_price")
-                    new_stock = var_stock if var_stock else res.get("detected_stock")
+
+                    if res.get("detected_stock") and "остаток" in res.get("detected_stock").lower():
+                        new_stock = res.get("detected_stock")
+                    elif var_stock and "остаток" in var_stock.lower():
+                        new_stock = var_stock
+                    else:
+                        new_stock = res.get("detected_stock") or var_stock
 
                     if new_stock:
                         item["stock"] = new_stock
