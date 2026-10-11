@@ -20,11 +20,11 @@ try:
 except ImportError:
     HAS_PIL = False
 
-__version__ = "1.1"
+__version__ = "1.2"
 __license__ = "GPL-2.0"
 __author__ = "git-sudo-ai"
 
-CHECK_INTERVAL_SEC = 600
+CHECK_INTERVAL_SEC = 240
 DB_FILE_NAME = "goods_search_db"
 
 DRAWER_TARGET_HEIGHT = 148
@@ -1076,12 +1076,12 @@ class App:
         self.count_lbl = tk.Label(status_bar, text="Отслеживается: 0 товаров", font=("TkDefaultFont", 9), bg="#f1f5f9", fg="#334155")
         self.count_lbl.pack(side="left")
 
-        self.timer_lbl = tk.Label(status_bar, text="Следующая проверка через: 10:00", font=("TkDefaultFont", 9, "bold"), bg="#f1f5f9", fg=COLOR_ACCENT)
-        self.timer_lbl.pack(side="right")
+        self.status_indicator = tk.Label(status_bar, text="", font=("TkDefaultFont", 9, "bold"), bg="#f1f5f9", fg=COLOR_GREEN)
+        self.status_indicator.pack(side="right")
 
         ver_bar = tk.Frame(self.root, bg="#f1f5f9", padx=14, pady=3)
         ver_bar.pack(side="bottom", fill="x")
-        tk.Label(ver_bar, text="Маркетплейс Трекер v1.1", font=("TkDefaultFont", 8), fg="#94a3b8", bg="#f1f5f9").pack(side="left")
+        tk.Label(ver_bar, text=f"Маркетплейс Трекер v{__version__}", font=("TkDefaultFont", 8), fg="#94a3b8", bg="#f1f5f9").pack(side="left")
 
         self.drawer_frame = tk.Frame(self.root, bg=COLOR_BG)
         self.drawer_frame.pack(side="bottom", fill="x")
@@ -1196,6 +1196,13 @@ class App:
         for widget in self.cards_frame.winfo_children():
             widget.destroy()
 
+        def is_item_ready(it):
+            cp = it.get("current_price")
+            tp = it.get("target_price")
+            return bool(cp is not None and tp is not None and cp <= tp)
+
+        self.items.sort(key=lambda it: not is_item_ready(it))
+
         total = len(self.items)
         ready_count = 0
 
@@ -1216,7 +1223,7 @@ class App:
         for item in self.items:
             cur_p = item.get("current_price")
             target_p = item.get("target_price")
-            is_ready = bool(cur_p is not None and target_p is not None and cur_p <= target_p)
+            is_ready = is_item_ready(item)
             if is_ready:
                 ready_count += 1
 
@@ -1270,34 +1277,47 @@ class App:
             tgt_txt = f"{target_p:,} ₽".replace(",", " ") if target_p is not None else "-"
             tk.Label(price_row, text=f"Цель: не выше {tgt_txt}", font=("TkDefaultFont", 9), fg="#475569", bg=card_bg).pack(side="left", padx=(0, 16))
 
-            status_txt = "★ ЦЕЛЬ ДОСТИГНУТА! Пора покупать" if is_ready else "⏳ Ожидание снижения цены"
-            status_fg = "#166534" if is_ready else "#64748b"
-            tk.Label(price_row, text=status_txt, font=("TkDefaultFont", 9, "bold" if is_ready else "normal"), fg=status_fg, bg=card_bg).pack(side="left")
-
-            last_ch = item.get("last_checked", "")
-            if last_ch:
-                tk.Label(price_row, text=f"Проверено: {last_ch}", font=("TkDefaultFont", 8), fg="#94a3b8", bg=card_bg).pack(side="right")
+            if is_ready:
+                tk.Label(price_row, text="★ ЦЕЛЬ ДОСТИГНУТА! Пора покупать", font=("TkDefaultFont", 9, "bold"), fg="#166534", bg=card_bg).pack(side="left")
 
             actions_row = tk.Frame(info_box, bg=card_bg)
             actions_row.pack(fill="x", pady=(4, 0))
 
-            buy_btn = tk.Label(
-                actions_row, text="🛒 Купить и перейти (с автоудалением)",
-                bg=COLOR_GREEN, fg="white",
-                relief="flat", cursor="hand2",
-                font=("TkDefaultFont", 9, "bold"),
-                padx=10, pady=5
+            if is_ready:
+                site_btn = tk.Label(
+                    actions_row, text="Перейти на сайт",
+                    bg=COLOR_GREEN, fg="white",
+                    relief="flat", cursor="hand2",
+                    font=("TkDefaultFont", 9, "bold"),
+                    padx=14, pady=5
+                )
+                site_btn.bind("<Enter>", lambda _e, b=site_btn: b.config(bg=COLOR_GREEN_HOVER))
+                site_btn.bind("<Leave>", lambda _e, b=site_btn: b.config(bg=COLOR_GREEN))
+            else:
+                site_btn = tk.Label(
+                    actions_row, text="Перейти на сайт",
+                    bg="#f1f5f9", fg="#334155",
+                    relief="solid", bd=1, cursor="hand2",
+                    font=("TkDefaultFont", 9),
+                    padx=14, pady=5
+                )
+                site_btn.bind("<Enter>", lambda _e, b=site_btn: b.config(bg="#e2e8f0"))
+                site_btn.bind("<Leave>", lambda _e, b=site_btn: b.config(bg="#f1f5f9"))
+
+            site_btn.pack(side="left", padx=(0, 8))
+            site_btn.bind("<Button-1>", lambda _e, it=item: self.open_site(it))
+
+            del_btn = tk.Label(
+                actions_row, text="✕ Удалить",
+                bg="#fee2e2", fg="#b91c1c",
+                relief="solid", bd=1, cursor="hand2",
+                font=("TkDefaultFont", 9),
+                padx=10, pady=4
             )
-            buy_btn.pack(side="left", padx=(0, 8))
-            buy_btn.bind("<Button-1>", lambda _e, it=item: self.buy_and_remove(it))
-            buy_btn.bind("<Enter>", lambda _e, b=buy_btn: b.config(bg=COLOR_GREEN_HOVER))
-            buy_btn.bind("<Leave>", lambda _e, b=buy_btn: b.config(bg=COLOR_GREEN))
-
-            open_btn = tk.Button(actions_row, text="🔗 Открыть ссылку", command=lambda it=item: webbrowser.open_new_tab(it["url"]))
-            open_btn.pack(side="left", padx=(0, 8))
-
-            del_btn = tk.Button(actions_row, text="✕ Удалить", command=lambda it=item: self.delete_item(it))
             del_btn.pack(side="right")
+            del_btn.bind("<Enter>", lambda _e, b=del_btn: b.config(bg="#fecaca"))
+            del_btn.bind("<Leave>", lambda _e, b=del_btn: b.config(bg="#fee2e2"))
+            del_btn.bind("<Button-1>", lambda _e, it=item: self.delete_item(it))
 
         status_text = f"Отслеживается: {total} позиций"
         if ready_count > 0:
@@ -1366,13 +1386,10 @@ class App:
 
         self.root.after(DRAWER_ANIM_DELAY_MS, _anim)
 
-    def buy_and_remove(self, item):
-        item_id = item.get("id")
+    def open_site(self, item):
         url = item.get("url")
-        webbrowser.open_new_tab(url)
-        self.items = [x for x in self.items if x.get("id") != item_id]
-        save_db(self.items)
-        self.render_cards()
+        if url:
+            webbrowser.open_new_tab(url)
 
     def delete_item(self, item):
         item_id = item.get("id")
@@ -1398,9 +1415,6 @@ class App:
                 if self.seconds_left <= 0:
                     self.seconds_left = CHECK_INTERVAL_SEC
                     self.run_background_check()
-                mins = self.seconds_left // 60
-                secs = self.seconds_left % 60
-                self.timer_lbl.config(text=f"Следующая проверка через: {mins:02d}:{secs:02d}")
             self.root.after(1000, tick)
         self.root.after(1000, tick)
 
@@ -1415,7 +1429,7 @@ class App:
             return
         self.is_checking = True
         self.refresh_btn.config(state="disabled")
-        self.timer_lbl.config(text="Идет проверка цен...", fg=COLOR_GREEN)
+        self.status_indicator.config(text="Идет проверка цен...", fg=COLOR_GREEN)
 
         def worker():
             notified_items = []
@@ -1453,12 +1467,18 @@ class App:
                             item["status"] = "Отслеживается"
                             item["notified"] = False
 
+            def is_ready(it):
+                cp = it.get("current_price")
+                tp = it.get("target_price")
+                return bool(cp is not None and tp is not None and cp <= tp)
+
+            self.items.sort(key=lambda it: not is_ready(it))
             save_db(self.items)
 
             def update_ui():
                 self.is_checking = False
                 self.refresh_btn.config(state="normal")
-                self.timer_lbl.config(text=f"Следующая проверка через: {self.seconds_left // 60:02d}:{self.seconds_left % 60:02d}", fg=COLOR_ACCENT)
+                self.status_indicator.config(text="")
                 self.render_cards()
 
                 for n_item in notified_items:
