@@ -8,11 +8,11 @@ import threading
 import subprocess
 import webbrowser
 from datetime import datetime
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, urljoin
 import urllib.request
 import urllib.error
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 
 try:
     from PIL import Image, ImageTk
@@ -48,8 +48,6 @@ ADD_WINDOW_SIZE = "660x580"
 TG_ICON_DATA = "iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAADL0lEQVR4nK1UzWtcVRT/nXPvm4/MJOlMsTWC2iaNECIuShUx4MavinFRhGzEipWAbt1L/wO3XfgFgpsuxIXSFNtNsEixiKBVSMg0/ZgQQ81o+l5m5r17z5F7p5Ngcel5m/vOOb/f+bjnHsJQzp83WFjw4Tj5+dprnJjT4v0cRB6JduYNNuaKFP6L1jtT3z6IoahQZRDJ5LmfpqnW+AjAPFkLzftQiX4gNqBSGepc+P1Gs84HrfePrw6xHFmJ5Oi5X5+hWuMql6vzWvRUupmoOB0mHM5RV/Q0+FC9cTVgAjZwMK5f1+kvb05yrbYEpoZLOw7EBCIGaJDxICdiJrbGUH6v40SpETABGzii49FPf79g682TLt12RGzxgJj7dLtO0XWCw7UEFuKy0rhF1llqvTvzKh35ZOVlU0ouatGXQRbD+IGA4ESRFYJQ40yzjFNTY3jyYBkf/rCF22kulXKVXT9/xTLrItkEWvRjP5jCDRB6XpAVHmMlxouP1fHWzAG88GgNosClWynWd3LULCuMBXN/0arq81L0AjpwxOh9r5g+UMb8ZB1vHBuPmQRZ+ytHs2Lw/cZu9BlNwK7oIXBYYnMI3oOIKPeKZydG8N5TTcxNjKCW7FWKlU4fhSjqpQSXb6fR5hUUsWwO7XvqoCd/7DrcywVVu2/azBzupAVmD1ZwYT1F6+8cFcOxb0NhFb8FY6BQDbdzc6fA4qU2XvrqBpbbGf7sevxyt4cTh6sR8PXaTuxhjAzViBW/xUS0zEkl6EMfUTGEhyoWv2338fbFNpbvpHj64SrGSiZm9uPmLkYSGjgrJGAjhwh9rK7Yey7BHi6biPDcRBU/3+3hzHft2NxrW120M4fyflkUsIHjPwcyKENjp8ZL2Nx1sdxTx8ZC+bh8K8NoycCLd7betC7dXroRBhJnz/L0E2eOiJdr4YlIv7tHlovCEiExhDSXOB9lSxAvjitVC9EOGz6xuvLZOmN2llbffLwlWXYyGGy9YaESPikxaQCH6R6xpGWDoFY72ogkAROwgeN/WyODB3p/FbQWjq8CeD0sNmJ/WonmQBwXmxJtkPgr6uXfi40oRvoHtInEN4izdlgAAAAASUVORK5CYII="
 GH_ICON_DATA = "iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAACv0lEQVR4nI1US2sUQRCu6u6Z1fg6icJKZJNJWNaYZM1BBCEnb0nIZQ4iiIg3f4B4CgH/guLNg6LIXgRB8GYgHnII0TyWPHY3Go2GiChIjDszXSXV2dnEPMCCXYqq7/u6uqqmAfYaAoQaDrRQcrgP6R9TAEDitBUKrQr8i0DUvpVRVYJoolYur+zG7hIaUQCjdLZQOO2xPwrIV5XSx7ABYWAgsr+A8VmM0cjHcnkt5ewUcuq5zq5uo81L43utSRwDEUcALDmBklLoG8+DJIpXEpsMLi/OTqdc+XPAXFfXKaXNKwbIRvX6U2L6po32EdHIT3yJSU4wghVOWoiCMJSqSFt9z/NMlplmq/PT1zDmC8TJkLK2B5Ok1/kJFiUnGMEKx/UpDNFdraOjJ8uaF5XWh62185j8LlYqlfp+MwuCIMOmZUprnSdrN9Fi59LS+1V3LTJ8GbVukUYw4iMR6evr8yB0o966fhhqiUlOMIIVjnDTJgMy5BQiMzMg23GJTU62EZRKtjFi57uYw9txwQpHuE0hdlpuggysjrul61/fs3TgYqEGUicEzg2upExjRz6AnKAUEvEwQOk1vIF0hbZtbEwqZFDnh1x3WQqC5aYQxjROSAkD/0TEG0G+d6aC7x5uHbhtQRD44LXcBMBbRMQMEGFs30LaxGp17hMzv1CovgPRdaXxfue54o9cvnugKZLvHkD/6ByifsDMqLWWop4LVzQMlEpyKnIEt+EQ1kDhlXoUFTKeP6QTNdHYfiaj1zRDOxHVldYZa+1XTequy5dKbv1lElirTa8TJf2IOOwZcydO4tU/fiQ9caYZNpiIjDYZIP7MTIMLC1NfGge5T0SMZBrV+ZnJzRiKgHDS87zHR6zOpn2S6wDCBpF9wrG9JNjGk9J8AXZaKgzyChQKBX9HozNBcP7MftiDTP3Hw7ZH5C+myVc9YUeWwgAAAABJRU5ErkJggg=="
 QR_CODE_DATA = "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"
-
-CACHED_ASSETS = {}
 
 def get_db_path():
     app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -90,6 +88,11 @@ def send_notification(title, message):
             subprocess.run(["osascript", "-e", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError:
             pass
+
+def is_product_ready(item):
+    cp = item.get("current_price")
+    tp = item.get("target_price")
+    return bool(cp is not None and tp is not None and cp <= tp)
 
 def get_basket_number(nm: int) -> int:
     vol = nm // 100000
@@ -178,7 +181,6 @@ def unshorten_url(url: str, max_hops: int = 5) -> str:
                 if line.lower().startswith("location:"):
                     loc = line.split(":", 1)[1].strip()
                     if loc:
-                        from urllib.parse import urljoin
                         next_url = urljoin(current, loc)
                         break
         except Exception:
@@ -199,7 +201,6 @@ def unshorten_url(url: str, max_hops: int = 5) -> str:
             except urllib.error.HTTPError as e:
                 loc = e.headers.get("Location") or e.headers.get("location")
                 if loc:
-                    from urllib.parse import urljoin
                     next_url = urljoin(current, loc)
             except Exception:
                 pass
@@ -434,7 +435,7 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
     categories = {}
 
     state_map = {}
-    for st, q, content in re.findall(r'<div id="state-([^"]+)" data-state=([\'"])(.*?)\2>', html):
+    for st, _q, content in re.findall(r'<div id="state-([^"]+)" data-state=([\'"])(.*?)\2>', html):
         state_map[st] = content
 
     for k, v in state_map.items():
@@ -618,10 +619,10 @@ def fetch_ozon_details(clean_url: str):
 
 def inspect_product(url: str):
     resolved = unshorten_url(url)
-    mp, art, sub = parse_target_url(resolved)
+    mp, art, _ = parse_target_url(resolved)
     if mp == "Wildberries":
         if not art:
-            mp_orig, art_orig, _ = parse_target_url(url)
+            _, art_orig, _ = parse_target_url(url)
             art = art_orig
         if art:
             return fetch_wb_details(art)
@@ -811,11 +812,8 @@ class AddWindow:
         self.add_btn.bind("<Enter>", lambda _e: self.add_btn.config(bg=COLOR_GREEN_HOVER))
         self.add_btn.bind("<Leave>", lambda _e: self.add_btn.config(bg=COLOR_GREEN))
 
-        self.try_auto_paste()
-        self.start_clipboard_monitor()
-
-    def try_auto_paste(self):
         self.check_clipboard()
+        self.start_clipboard_monitor()
 
     def start_clipboard_monitor(self):
         self.win.bind("<FocusIn>", lambda _e: self.check_clipboard())
@@ -858,7 +856,7 @@ class AddWindow:
             self.status_lbl.config(text="Укажите ссылку на товар.", fg=COLOR_WARNING)
             return
 
-        mp, art, sub = parse_target_url(url)
+        mp, art, _ = parse_target_url(url)
         if mp == "Unknown":
             self.status_lbl.config(text="Поддерживаются только ссылки на Wildberries или Ozon.", fg=COLOR_WARNING)
             return
@@ -1081,7 +1079,8 @@ class App:
 
         ver_bar = tk.Frame(self.root, bg="#f1f5f9", padx=14, pady=3)
         ver_bar.pack(side="bottom", fill="x")
-        tk.Label(ver_bar, text=f"Маркетплейс Трекер v{__version__}", font=("TkDefaultFont", 8), fg="#94a3b8", bg="#f1f5f9").pack(side="left")
+        tk.Label(ver_bar, text=f"Маркетплейс Трекер v{__version__} ({__license__})", font=("TkDefaultFont", 8), fg="#94a3b8", bg="#f1f5f9").pack(side="left")
+        tk.Label(ver_bar, text=f"by {__author__}", font=("TkDefaultFont", 8), fg="#94a3b8", bg="#f1f5f9").pack(side="right")
 
         self.drawer_frame = tk.Frame(self.root, bg=COLOR_BG)
         self.drawer_frame.pack(side="bottom", fill="x")
@@ -1196,12 +1195,7 @@ class App:
         for widget in self.cards_frame.winfo_children():
             widget.destroy()
 
-        def is_item_ready(it):
-            cp = it.get("current_price")
-            tp = it.get("target_price")
-            return bool(cp is not None and tp is not None and cp <= tp)
-
-        self.items.sort(key=lambda it: not is_item_ready(it))
+        self.items.sort(key=lambda it: not is_product_ready(it))
 
         total = len(self.items)
         ready_count = 0
@@ -1223,7 +1217,7 @@ class App:
         for item in self.items:
             cur_p = item.get("current_price")
             target_p = item.get("target_price")
-            is_ready = is_item_ready(item)
+            is_ready = is_product_ready(item)
             if is_ready:
                 ready_count += 1
 
@@ -1443,7 +1437,7 @@ class App:
                     var_p = None
                     var_tgt = item.get("variant")
                     sku = item["id"].split("_")[1] if "_" in item.get("id", "") else ""
-                    for cname, vlist in res.get("categories", {}).items():
+                    for vlist in res.get("categories", {}).values():
                         for v in vlist:
                             m_name = bool(var_tgt and (v.get("variant_name") == var_tgt or v.get("label") == var_tgt))
                             m_sku = bool(sku and str(v.get("nm")) == sku)
@@ -1467,12 +1461,7 @@ class App:
                             item["status"] = "Отслеживается"
                             item["notified"] = False
 
-            def is_ready(it):
-                cp = it.get("current_price")
-                tp = it.get("target_price")
-                return bool(cp is not None and tp is not None and cp <= tp)
-
-            self.items.sort(key=lambda it: not is_ready(it))
+            self.items.sort(key=lambda it: not is_product_ready(it))
             save_db(self.items)
 
             def update_ui():
