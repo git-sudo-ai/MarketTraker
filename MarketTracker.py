@@ -892,8 +892,74 @@ class AddWindow:
         self.add_btn.bind("<Enter>", lambda _e: self.add_btn.config(bg=COLOR_GREEN_HOVER))
         self.add_btn.bind("<Leave>", lambda _e: self.add_btn.config(bg=COLOR_GREEN))
 
+        self.win.bind("<MouseWheel>", self.on_mousewheel, add="+")
+        self.win.bind("<Button-4>", self.on_mousewheel_up, add="+")
+        self.win.bind("<Button-5>", self.on_mousewheel_down, add="+")
+
         self.check_clipboard()
         self.start_clipboard_monitor()
+
+    def _is_in_variants_area(self, event):
+        if not hasattr(self, "variants_canvas") or not self.variants_canvas.winfo_exists():
+            return False
+        widget = getattr(event, "widget", None)
+        if widget:
+            try:
+                if widget.winfo_toplevel() != self.win:
+                    return False
+            except Exception:
+                pass
+            if hasattr(self, "variants_scroll") and widget == self.variants_scroll:
+                return False
+            curr = widget
+            while curr:
+                if curr in (self.variants_inner, self.variants_canvas):
+                    return True
+                curr = getattr(curr, "master", None)
+        try:
+            vx = self.variants_canvas.winfo_rootx()
+            vy = self.variants_canvas.winfo_rooty()
+            vw = self.variants_canvas.winfo_width()
+            vh = self.variants_canvas.winfo_height()
+            return (vx <= event.x_root <= vx + vw) and (vy <= event.y_root <= vy + vh)
+        except Exception:
+            return False
+
+    def on_mousewheel(self, event):
+        if not self._is_in_variants_area(event):
+            return
+        try:
+            yv = self.variants_canvas.yview()
+            if yv[0] <= 0.0 and yv[1] >= 1.0:
+                return
+            delta = getattr(event, "delta", 0)
+            if not delta:
+                return
+            if abs(delta) >= 120:
+                step = -1 * int(delta / 60)
+            else:
+                step = -1 * int(delta)
+                if step == 0:
+                    step = -1 if delta > 0 else 1
+            self.variants_canvas.yview_scroll(step, "units")
+        except Exception:
+            pass
+
+    def on_mousewheel_up(self, event):
+        if not self._is_in_variants_area(event):
+            return
+        try:
+            self.variants_canvas.yview_scroll(-1, "units")
+        except Exception:
+            pass
+
+    def on_mousewheel_down(self, event):
+        if not self._is_in_variants_area(event):
+            return
+        try:
+            self.variants_canvas.yview_scroll(1, "units")
+        except Exception:
+            pass
 
     def start_clipboard_monitor(self):
         self.win.bind("<FocusIn>", lambda _e: self.check_clipboard())
@@ -1382,6 +1448,7 @@ class App:
 
         cards_container = tk.Frame(self.root, bg=COLOR_BG)
         cards_container.pack(fill="both", expand=True, padx=10, pady=6)
+        self.cards_container = cards_container
 
         self.canvas = tk.Canvas(cards_container, bg=COLOR_BG, highlightthickness=0)
         self.scrollbar = ttk.Scrollbar(cards_container, orient="vertical", command=self.canvas.yview)
@@ -1394,6 +1461,72 @@ class App:
 
         self.scrollbar.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True)
+
+        self.root.bind_all("<MouseWheel>", self.on_mousewheel, add="+")
+        self.root.bind_all("<Button-4>", self.on_mousewheel_up, add="+")
+        self.root.bind_all("<Button-5>", self.on_mousewheel_down, add="+")
+
+    def _is_in_cards_area(self, event):
+        if not hasattr(self, "canvas") or not self.canvas.winfo_exists():
+            return False
+        widget = getattr(event, "widget", None)
+        if widget:
+            try:
+                if widget.winfo_toplevel() != self.root:
+                    return False
+            except Exception:
+                pass
+            if hasattr(self, "scrollbar") and widget == self.scrollbar:
+                return False
+            curr = widget
+            while curr:
+                if curr in (self.cards_frame, self.canvas):
+                    return True
+                curr = getattr(curr, "master", None)
+        try:
+            cx = self.canvas.winfo_rootx()
+            cy = self.canvas.winfo_rooty()
+            cw = self.canvas.winfo_width()
+            ch = self.canvas.winfo_height()
+            return (cx <= event.x_root <= cx + cw) and (cy <= event.y_root <= cy + ch)
+        except Exception:
+            return False
+
+    def on_mousewheel(self, event):
+        if not self._is_in_cards_area(event):
+            return
+        try:
+            yv = self.canvas.yview()
+            if yv[0] <= 0.0 and yv[1] >= 1.0:
+                return
+            delta = getattr(event, "delta", 0)
+            if not delta:
+                return
+            if abs(delta) >= 120:
+                step = -1 * int(delta / 60)
+            else:
+                step = -1 * int(delta)
+                if step == 0:
+                    step = -1 if delta > 0 else 1
+            self.canvas.yview_scroll(step, "units")
+        except Exception:
+            pass
+
+    def on_mousewheel_up(self, event):
+        if not self._is_in_cards_area(event):
+            return
+        try:
+            self.canvas.yview_scroll(-1, "units")
+        except Exception:
+            pass
+
+    def on_mousewheel_down(self, event):
+        if not self._is_in_cards_area(event):
+            return
+        try:
+            self.canvas.yview_scroll(1, "units")
+        except Exception:
+            pass
 
     def load_items(self):
         self.items = load_db()
