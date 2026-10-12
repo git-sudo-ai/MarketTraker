@@ -942,7 +942,8 @@ class AddWindow:
             low = delta & 0xffff
             delta_y = low if low < 0x8000 else low - 0x10000
             if delta_y != 0:
-                self.variants_canvas.yview_scroll(delta_y, "units")
+                step = -delta_y if sys.platform == "darwin" else delta_y
+                self.variants_canvas.yview_scroll(step, "units")
         except Exception:
             pass
 
@@ -962,6 +963,8 @@ class AddWindow:
                 step = -1 * int(delta) * 30
                 if step == 0:
                     step = -30 if delta > 0 else 30
+            if sys.platform == "darwin":
+                step = -step
             self.variants_canvas.yview_scroll(step, "units")
         except Exception:
             pass
@@ -1530,7 +1533,8 @@ class App:
             low = delta & 0xffff
             delta_y = low if low < 0x8000 else low - 0x10000
             if delta_y != 0:
-                self.canvas.yview_scroll(delta_y, "units")
+                step = -delta_y if sys.platform == "darwin" else delta_y
+                self.canvas.yview_scroll(step, "units")
         except Exception:
             pass
 
@@ -1550,6 +1554,8 @@ class App:
                 step = -1 * int(delta) * 40
                 if step == 0:
                     step = -40 if delta > 0 else 40
+            if sys.platform == "darwin":
+                step = -step
             self.canvas.yview_scroll(step, "units")
         except Exception:
             pass
