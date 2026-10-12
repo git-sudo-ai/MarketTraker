@@ -27,7 +27,7 @@ if sys.platform == "darwin":
     except Exception:
         pass
 
-__version__ = "1.2"
+__version__ = "1.3"
 __license__ = "GPL-2.0"
 __author__ = "git-sudo-ai"
 
@@ -862,7 +862,7 @@ class AddWindow:
 
         tk.Label(self.variants_outer, text="Доступные варианты товара (нажмите для выбора):", font=("TkDefaultFont", 9, "bold"), bg="#ffffff", fg="#0f172a", anchor="w").pack(fill="x", pady=(0, 4))
 
-        self.variants_canvas = tk.Canvas(self.variants_outer, bg="#ffffff", highlightthickness=0, height=140)
+        self.variants_canvas = tk.Canvas(self.variants_outer, bg="#ffffff", highlightthickness=0, height=140, yscrollincrement=1)
         self.variants_scroll = ttk.Scrollbar(self.variants_outer, orient="vertical", command=self.variants_canvas.yview)
         self.variants_inner = tk.Frame(self.variants_canvas, bg="#ffffff")
 
@@ -892,6 +892,10 @@ class AddWindow:
         self.add_btn.bind("<Enter>", lambda _e: self.add_btn.config(bg=COLOR_GREEN_HOVER))
         self.add_btn.bind("<Leave>", lambda _e: self.add_btn.config(bg=COLOR_GREEN))
 
+        try:
+            self.win.bind("<TouchpadScroll>", self.on_touchpad_scroll, add="+")
+        except Exception:
+            pass
         self.win.bind("<MouseWheel>", self.on_mousewheel, add="+")
         self.win.bind("<Button-4>", self.on_mousewheel_up, add="+")
         self.win.bind("<Button-5>", self.on_mousewheel_down, add="+")
@@ -925,6 +929,23 @@ class AddWindow:
         except Exception:
             return False
 
+    def on_touchpad_scroll(self, event):
+        if not self._is_in_variants_area(event):
+            return
+        try:
+            yv = self.variants_canvas.yview()
+            if yv[0] <= 0.0 and yv[1] >= 1.0:
+                return
+            delta = getattr(event, "delta", 0)
+            if not delta:
+                return
+            low = delta & 0xffff
+            delta_y = low if low < 0x8000 else low - 0x10000
+            if delta_y != 0:
+                self.variants_canvas.yview_scroll(delta_y, "units")
+        except Exception:
+            pass
+
     def on_mousewheel(self, event):
         if not self._is_in_variants_area(event):
             return
@@ -936,11 +957,11 @@ class AddWindow:
             if not delta:
                 return
             if abs(delta) >= 120:
-                step = -1 * int(delta / 60)
+                step = -1 * int(delta / 120) * 30
             else:
-                step = -1 * int(delta)
+                step = -1 * int(delta) * 30
                 if step == 0:
-                    step = -1 if delta > 0 else 1
+                    step = -30 if delta > 0 else 30
             self.variants_canvas.yview_scroll(step, "units")
         except Exception:
             pass
@@ -949,7 +970,7 @@ class AddWindow:
         if not self._is_in_variants_area(event):
             return
         try:
-            self.variants_canvas.yview_scroll(-1, "units")
+            self.variants_canvas.yview_scroll(-30, "units")
         except Exception:
             pass
 
@@ -957,7 +978,7 @@ class AddWindow:
         if not self._is_in_variants_area(event):
             return
         try:
-            self.variants_canvas.yview_scroll(1, "units")
+            self.variants_canvas.yview_scroll(30, "units")
         except Exception:
             pass
 
@@ -1450,7 +1471,7 @@ class App:
         cards_container.pack(fill="both", expand=True, padx=10, pady=6)
         self.cards_container = cards_container
 
-        self.canvas = tk.Canvas(cards_container, bg=COLOR_BG, highlightthickness=0)
+        self.canvas = tk.Canvas(cards_container, bg=COLOR_BG, highlightthickness=0, yscrollincrement=1)
         self.scrollbar = ttk.Scrollbar(cards_container, orient="vertical", command=self.canvas.yview)
         self.cards_frame = tk.Frame(self.canvas, bg=COLOR_BG)
 
@@ -1462,6 +1483,10 @@ class App:
         self.scrollbar.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True)
 
+        try:
+            self.root.bind_all("<TouchpadScroll>", self.on_touchpad_scroll, add="+")
+        except Exception:
+            pass
         self.root.bind_all("<MouseWheel>", self.on_mousewheel, add="+")
         self.root.bind_all("<Button-4>", self.on_mousewheel_up, add="+")
         self.root.bind_all("<Button-5>", self.on_mousewheel_down, add="+")
@@ -1492,6 +1517,23 @@ class App:
         except Exception:
             return False
 
+    def on_touchpad_scroll(self, event):
+        if not self._is_in_cards_area(event):
+            return
+        try:
+            yv = self.canvas.yview()
+            if yv[0] <= 0.0 and yv[1] >= 1.0:
+                return
+            delta = getattr(event, "delta", 0)
+            if not delta:
+                return
+            low = delta & 0xffff
+            delta_y = low if low < 0x8000 else low - 0x10000
+            if delta_y != 0:
+                self.canvas.yview_scroll(delta_y, "units")
+        except Exception:
+            pass
+
     def on_mousewheel(self, event):
         if not self._is_in_cards_area(event):
             return
@@ -1503,11 +1545,11 @@ class App:
             if not delta:
                 return
             if abs(delta) >= 120:
-                step = -1 * int(delta / 60)
+                step = -1 * int(delta / 120) * 40
             else:
-                step = -1 * int(delta)
+                step = -1 * int(delta) * 40
                 if step == 0:
-                    step = -1 if delta > 0 else 1
+                    step = -40 if delta > 0 else 40
             self.canvas.yview_scroll(step, "units")
         except Exception:
             pass
@@ -1516,7 +1558,7 @@ class App:
         if not self._is_in_cards_area(event):
             return
         try:
-            self.canvas.yview_scroll(-1, "units")
+            self.canvas.yview_scroll(-40, "units")
         except Exception:
             pass
 
@@ -1524,7 +1566,7 @@ class App:
         if not self._is_in_cards_area(event):
             return
         try:
-            self.canvas.yview_scroll(1, "units")
+            self.canvas.yview_scroll(40, "units")
         except Exception:
             pass
 
@@ -1683,7 +1725,10 @@ class App:
                     tk_img = ImageTk.PhotoImage(pil_im)
                     self.card_thumbnails[item_id] = tk_img
                     target_label.config(image=tk_img, text="")
-            self.root.after(0, done)
+            try:
+                self.root.after(0, done)
+            except Exception:
+                pass
         threading.Thread(target=worker, daemon=True).start()
 
     def toggle_drawer(self):
