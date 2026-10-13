@@ -769,9 +769,10 @@ def get_gh_image(master):
     return img
 
 class AddWindow:
-    def __init__(self, parent, on_added_cb):
+    def __init__(self, parent, on_added_cb, item_to_edit=None):
         self.win = tk.Toplevel(parent)
-        self.win.title("Добавить товар в отслеживание")
+        self.item_to_edit = item_to_edit
+        self.win.title("Редактировать товар" if item_to_edit else "Добавить товар в отслеживание")
         self.win.geometry(ADD_WINDOW_SIZE)
         self.win.minsize(580, 500)
         self.win.transient(parent)
@@ -782,6 +783,7 @@ class AddWindow:
         self.current_preview_tk = None
         self.variant_buttons = {}
         self.last_clipboard = ""
+        self.target_price_locked = bool(item_to_edit)
 
         self.setup()
 
@@ -846,9 +848,11 @@ class AddWindow:
         self.tgt_price_var = tk.StringVar()
         self.tgt_price_entry = tk.Entry(p_row2, textvariable=self.tgt_price_var, width=12, font=("TkDefaultFont", 10, "bold"))
         self.tgt_price_entry.pack(side="left")
-        tk.Label(p_row2, text="(не выше которой готовы купить)", font=("TkDefaultFont", 8), bg="#ffffff", fg="#16a34a").pack(side="left", padx=(6, 0))
+        tk.Label(p_row2, text="рублей", font=("TkDefaultFont", 8), bg="#ffffff", fg="#64748b").pack(side="left", padx=(6, 0))
 
         def _on_cur_price(*_args):
+            if getattr(self, "target_price_locked", False):
+                return
             digits = re.sub(r'[^\d]', '', self.cur_price_var.get())
             if digits:
                 try:
@@ -880,8 +884,9 @@ class AddWindow:
         cancel_btn = tk.Button(bottom_row, text="Отмена", width=10, command=self.win.destroy)
         cancel_btn.pack(side="right", padx=(6, 0))
 
+        btn_txt = "Сохранить изменения" if self.item_to_edit else "Добавить в отслеживание"
         self.add_btn = tk.Label(
-            bottom_row, text="Добавить в отслеживание",
+            bottom_row, text=btn_txt,
             bg=COLOR_GREEN, fg="white",
             relief="flat", cursor="hand2",
             font=("TkDefaultFont", 9, "bold"),
@@ -900,8 +905,14 @@ class AddWindow:
         self.win.bind("<Button-4>", self.on_mousewheel_up, add="+")
         self.win.bind("<Button-5>", self.on_mousewheel_down, add="+")
 
-        self.check_clipboard()
-        self.start_clipboard_monitor()
+        if not self.item_to_edit:
+            self.check_clipboard()
+            self.start_clipboard_monitor()
+        else:
+            self.url_var.set(self.item_to_edit.get("url", ""))
+            self.tgt_price_var.set(str(self.item_to_edit.get("target_price", "")))
+            self.target_price_locked = True
+            self.trigger_inspect()
 
     def _is_in_variants_area(self, event):
         if not hasattr(self, "variants_canvas") or not self.variants_canvas.winfo_exists():
@@ -1039,19 +1050,49 @@ class AddWindow:
             resolved = unshorten_url(url)
             data = inspect_product(resolved)
             def done():
+                if not self.win.winfo_exists():
+                    return
                 self.check_btn.config(state="normal")
-                if not data:
+                if not data and self.item_to_edit:
+                    it = self.item_to_edit
+                    fallback_data = {
+                        "marketplace": it.get("marketplace", "WB"),
+                        "title": it.get("title", ""),
+                        "default_image": it.get("image_url", ""),
+                        "image_candidates": it.get("image_candidates", []),
+                        "detected_price": it.get("current_price"),
+                        "detected_stock": it.get("stock", ""),
+                        "categories": {
+                            "Текущий выбор": [{
+                                "label": it.get("variant") or "Выбранный вариант",
+                                "variant_name": it.get("variant") or "Основной",
+                                "nm": parse_target_url(it.get("url", ""))[1] or "",
+                                "url": it.get("url", ""),
+                                "image_url": it.get("image_url", ""),
+                                "image_candidates": it.get("image_candidates", []),
+                                "price": it.get("current_price"),
+                                "stock": it.get("stock", ""),
+                                "is_default": True
+                            }]
+                        }
+                    }
+                    data_to_use = fallback_data
+                else:
+                    data_to_use = data
+                if not data_to_use:
                     self.status_lbl.config(text="Не удалось получить данные о товаре. Проверьте ссылку.", fg=COLOR_WARNING)
                     return
                 if resolved and resolved != url and resolved.startswith("http"):
                     self.url_var.set(resolved)
-                self.inspected_data = data
+                self.inspected_data = data_to_use
                 self.render_inspected_data()
             self.win.after(0, done)
 
         threading.Thread(target=worker, daemon=True).start()
 
     def render_inspected_data(self):
+        if not self.win.winfo_exists():
+            return
         self.result_frame.pack(fill="both", expand=True, pady=(4, 0))
         d = self.inspected_data
         mp = d.get("marketplace", "")
@@ -1072,6 +1113,28 @@ class AddWindow:
 
         categories = d.get("categories", {})
         default_var = None
+        matched_var = None
+
+        if self.item_to_edit:
+            cur_vname = str(self.item_to_edit.get("variant", "")).strip().lower()
+            cur_url = str(self.item_to_edit.get("url", "")).strip()
+            _, cur_art, _ = parse_target_url(cur_url)
+            for cat_name, items in categories.items():
+                for it in items:
+                    it_vname = str(it.get("variant_name") or it.get("label", "")).strip().lower()
+                    it_nm = str(it.get("nm", "")).strip()
+                    it_url = str(it.get("url", "")).strip()
+                    if cur_vname and (it_vname == cur_vname or cur_vname in it_vname or it_vname in cur_vname):
+                        matched_var = (it, cat_name)
+                        break
+                    if cur_art and it_nm and cur_art == it_nm:
+                        matched_var = (it, cat_name)
+                        break
+                    if cur_url and it_url and cur_url == it_url:
+                        matched_var = (it, cat_name)
+                        break
+                if matched_var:
+                    break
 
         for cat_name, items in categories.items():
             cat_box = tk.Frame(self.variants_inner, bg="#ffffff", pady=4)
@@ -1105,7 +1168,9 @@ class AddWindow:
                 if item.get("is_default") and default_var is None:
                     default_var = (item, cat_name)
 
-        if default_var:
+        if matched_var:
+            self.select_variant(matched_var[0], matched_var[1])
+        elif default_var:
             self.select_variant(default_var[0], default_var[1])
         elif categories:
             first_cat = list(categories.keys())[0]
@@ -1160,7 +1225,7 @@ class AddWindow:
         tgt_digits = re.sub(r'[^\d]', '', tgt_raw)
 
         if not tgt_digits:
-            self.status_lbl.config(text="Укажите желаемую цену покупки (не выше которой готовы купить).", fg=COLOR_WARNING)
+            self.status_lbl.config(text="Укажите желаемую цену покупки.", fg=COLOR_WARNING)
             self.tgt_price_entry.focus_set()
             return
 
@@ -1177,6 +1242,23 @@ class AddWindow:
         chosen_img = v_item.get("image_url") or d.get("default_image", "")
         chosen_cands = v_item.get("image_candidates") or ([chosen_img] if chosen_img else [])
         stock_val = v_item.get("stock") or d.get("detected_stock", "")
+
+        if self.item_to_edit:
+            self.item_to_edit["url"] = url
+            if d.get("title"):
+                self.item_to_edit["title"] = d.get("title")
+            self.item_to_edit["variant"] = variant_name
+            self.item_to_edit["image_url"] = chosen_img
+            self.item_to_edit["image_candidates"] = chosen_cands
+            self.item_to_edit["target_price"] = target_price
+            self.item_to_edit["current_price"] = current_price
+            self.item_to_edit["stock"] = stock_val
+            self.item_to_edit["status"] = "Готово к покупке" if current_price <= target_price else "Отслеживается"
+            self.item_to_edit["last_checked"] = datetime.now().strftime("%H:%M:%S")
+            self.item_to_edit["notified"] = bool(current_price <= target_price)
+            self.on_added_cb(self.item_to_edit)
+            self.win.destroy()
+            return
 
         item = {
             "id": f"{mp.lower()}_{art}_{int(time.time())}",
@@ -1198,11 +1280,13 @@ class AddWindow:
         self.win.destroy()
 
 class MacStatusBar:
-    def __init__(self):
+    def __init__(self, root=None):
+        self.root = root
         self.status_item = None
         self.sb = None
         self.img_normal = None
         self.img_gold = None
+        self.img_blank = None
         self.set_img_fn = None
         self.set_tip_fn = None
         self.tip_fn = None
@@ -1212,14 +1296,18 @@ class MacStatusBar:
         self.sel_set_image = None
         self.sel_set_tip = None
         self.sel_utf8 = None
+        self.blink_timer_id = None
+        self.is_blinking = False
+        self.blink_visible = True
+        self.ready_count = 0
         self.setup()
 
-    def make_icon(self, is_gold):
+    def make_icon(self, mode):
         im = Image.new("RGBA", (18, 18), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
-        if is_gold:
+        if mode == "gold":
             d.ellipse([2, 2, 15, 15], fill=(235, 198, 86, 240), outline=(202, 160, 48, 255), width=2)
-        else:
+        elif mode == "normal":
             d.ellipse([2, 2, 15, 15], outline=(0, 0, 0, 255), width=2)
         buf = io.BytesIO()
         im.save(buf, format="PNG")
@@ -1239,7 +1327,7 @@ class MacStatusBar:
 
         tmpl_sel = self.objc.sel_registerName(b"setTemplate:")
         tmpl_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool))
-        tmpl_fn(nsimg, tmpl_sel, not is_gold)
+        tmpl_fn(nsimg, tmpl_sel, mode == "normal")
 
         ret_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
         ret_fn(nsimg, self.objc.sel_registerName(b"retain"))
@@ -1261,8 +1349,9 @@ class MacStatusBar:
             self.NSString = self.objc.objc_getClass(b"NSString")
             NSStatusBar = self.objc.objc_getClass(b"NSStatusBar")
 
-            self.img_normal = self.make_icon(is_gold=False)
-            self.img_gold = self.make_icon(is_gold=True)
+            self.img_normal = self.make_icon("normal")
+            self.img_gold = self.make_icon("gold")
+            self.img_blank = self.make_icon("blank")
 
             sb_sel = self.objc.sel_registerName(b"systemStatusBar")
             send_fn = ctypes.cast(self.objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
@@ -1293,16 +1382,61 @@ class MacStatusBar:
     def update_status(self, ready_count):
         if not self.status_item or not self.sb:
             return
+        self.ready_count = ready_count
         try:
-            img = self.img_gold if ready_count > 0 else self.img_normal
-            self.set_img_fn(self.status_item, self.sel_set_image, img)
             tip_text = f"Маркетплейс Трекер: {ready_count} товаров со скидкой!" if ready_count > 0 else "Маркетплейс Трекер"
             tip_obj = self.tip_fn(self.NSString, self.sel_utf8, tip_text.encode("utf-8"))
             self.set_tip_fn(self.status_item, self.sel_set_tip, tip_obj)
+
+            if ready_count > 0:
+                if not self.is_blinking:
+                    self.is_blinking = True
+                    self.blink_visible = True
+                    self.set_img_fn(self.status_item, self.sel_set_image, self.img_gold)
+                    self.schedule_blink()
+            else:
+                self.stop_blinking()
+                self.set_img_fn(self.status_item, self.sel_set_image, self.img_normal)
         except Exception:
             pass
 
+    def schedule_blink(self):
+        if self.blink_timer_id and self.root:
+            try:
+                self.root.after_cancel(self.blink_timer_id)
+            except Exception:
+                pass
+            self.blink_timer_id = None
+        if self.is_blinking and self.root:
+            try:
+                self.blink_timer_id = self.root.after(1000, self._blink_tick)
+            except Exception:
+                pass
+
+    def _blink_tick(self):
+        self.blink_timer_id = None
+        if not self.is_blinking or not self.status_item or not self.sb:
+            return
+        try:
+            self.blink_visible = not self.blink_visible
+            img = self.img_gold if self.blink_visible else self.img_blank
+            self.set_img_fn(self.status_item, self.sel_set_image, img)
+        except Exception:
+            pass
+        self.schedule_blink()
+
+    def stop_blinking(self):
+        self.is_blinking = False
+        self.blink_visible = True
+        if self.blink_timer_id and self.root:
+            try:
+                self.root.after_cancel(self.blink_timer_id)
+            except Exception:
+                pass
+            self.blink_timer_id = None
+
     def cleanup(self):
+        self.stop_blinking()
         if self.sb and self.status_item:
             try:
                 rem_sel = self.objc.sel_registerName(b"removeStatusItem:")
@@ -1322,7 +1456,7 @@ class App:
         self.drawer_expanded = False
         self.drawer_animating = False
         self.drawer_current_h = 0
-        self.status_bar_mgr = MacStatusBar()
+        self.status_bar_mgr = MacStatusBar(self.root)
 
         self.root.title("Маркетплейс Трекер Цен (WB / Ozon)")
         self.root.geometry(DEFAULT_WINDOW_SIZE)
@@ -1360,8 +1494,17 @@ class App:
         self.add_btn.bind("<Enter>", lambda _e: self.add_btn.config(bg=COLOR_GREEN_HOVER))
         self.add_btn.bind("<Leave>", lambda _e: self.add_btn.config(bg=COLOR_GREEN))
 
-        self.refresh_btn = tk.Button(actions_frame, text="Проверить сейчас", width=16, command=self.manual_check)
+        self.refresh_btn = tk.Label(
+            actions_frame, text="Проверить сейчас",
+            bg="#f1f5f9", fg="#334155",
+            relief="solid", bd=1, cursor="hand2",
+            font=("TkDefaultFont", 9),
+            width=17, pady=5, anchor="center"
+        )
         self.refresh_btn.pack(side="left", padx=(6, 0))
+        self.refresh_btn.bind("<Button-1>", lambda _e: self.manual_check())
+        self.refresh_btn.bind("<Enter>", lambda _e: self._on_refresh_enter())
+        self.refresh_btn.bind("<Leave>", lambda _e: self._on_refresh_leave())
 
         title_lbl = tk.Label(top_bar, text="Мониторинг цен (WB & Ozon)", font=("TkDefaultFont", 12, "bold"), bg="#ffffff", fg="#0f172a")
         title_lbl.pack(side="left")
@@ -1667,9 +1810,6 @@ class App:
                 stock_color = "#dc2626" if "нет" in stock_val.lower() else "#475569"
                 tk.Label(price_row, text=stock_val, font=("TkDefaultFont", 9), fg=stock_color, bg=card_bg).pack(side="left", padx=(0, 16))
 
-            if is_ready:
-                tk.Label(price_row, text="★ ЦЕЛЬ ДОСТИГНУТА! Пора покупать", font=("TkDefaultFont", 9, "bold"), fg="#166534", bg=card_bg).pack(side="left")
-
             actions_row = tk.Frame(info_box, bg=card_bg)
             actions_row.pack(fill="x", pady=(4, 0))
 
@@ -1696,6 +1836,18 @@ class App:
 
             site_btn.pack(side="left", padx=(0, 8))
             site_btn.bind("<Button-1>", lambda _e, it=item: self.open_site(it))
+
+            edit_btn = tk.Label(
+                actions_row, text="Редактировать",
+                bg="#f1f5f9", fg="#334155",
+                relief="solid", bd=1, cursor="hand2",
+                font=("TkDefaultFont", 9),
+                padx=14, pady=5
+            )
+            edit_btn.pack(side="left", padx=(0, 8))
+            edit_btn.bind("<Enter>", lambda _e, b=edit_btn: b.config(bg="#e2e8f0"))
+            edit_btn.bind("<Leave>", lambda _e, b=edit_btn: b.config(bg="#f1f5f9"))
+            edit_btn.bind("<Button-1>", lambda _e, it=item: self.open_edit_dialog(it))
 
             del_btn = tk.Label(
                 actions_row, text="✕ Удалить",
@@ -1797,6 +1949,16 @@ class App:
         save_db(self.items)
         self.render_cards()
 
+    def edit_item_callback(self, item):
+        item_id = item.get("id")
+        if item_id in self.card_thumbnails:
+            del self.card_thumbnails[item_id]
+        save_db(self.items)
+        self.render_cards()
+
+    def open_edit_dialog(self, item):
+        AddWindow(self.root, self.edit_item_callback, item_to_edit=item)
+
     def open_add_dialog(self, initial_url=""):
         dlg = AddWindow(self.root, self.add_item_callback)
         if initial_url:
@@ -1813,6 +1975,14 @@ class App:
             self.root.after(1000, tick)
         self.root.after(1000, tick)
 
+    def _on_refresh_enter(self):
+        if not self.is_checking:
+            self.refresh_btn.config(bg="#e2e8f0")
+
+    def _on_refresh_leave(self):
+        if not self.is_checking:
+            self.refresh_btn.config(bg="#f1f5f9")
+
     def manual_check(self):
         if self.is_checking:
             return
@@ -1823,8 +1993,7 @@ class App:
         if self.is_checking or len(self.items) == 0:
             return
         self.is_checking = True
-        self.refresh_btn.config(state="disabled")
-        self.status_indicator.config(text="Идет проверка цен...", fg=COLOR_GREEN)
+        self.refresh_btn.config(text="Проверяю цены", fg="#16a34a", cursor="default")
 
         def worker():
             notified_items = []
@@ -1881,8 +2050,7 @@ class App:
 
             def update_ui():
                 self.is_checking = False
-                self.refresh_btn.config(state="normal")
-                self.status_indicator.config(text="")
+                self.refresh_btn.config(text="Проверить сейчас", fg="#334155", cursor="hand2")
                 self.render_cards()
 
                 for n_item in notified_items:
