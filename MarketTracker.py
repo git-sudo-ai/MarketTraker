@@ -13,6 +13,7 @@ import urllib.request
 import urllib.error
 import tkinter as tk
 from tkinter import ttk
+import platform
 
 try:
     from PIL import Image, ImageTk, ImageDraw
@@ -27,7 +28,7 @@ if sys.platform == "darwin":
     except Exception:
         pass
 
-__version__ = "1.3"
+__version__ = "2.1"
 __license__ = "GPL-2.0"
 __author__ = "git-sudo-ai"
 
@@ -60,6 +61,77 @@ def get_db_path():
     app_dir = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(app_dir, DB_FILE_NAME)
 
+SETTINGS_FILE_NAME = "goods_search_db_settings.json"
+
+def get_settings_path():
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(app_dir, SETTINGS_FILE_NAME)
+
+def load_settings():
+    path = get_settings_path()
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+def save_settings(data):
+    path = get_settings_path()
+    tmp_path = path + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, path)
+    except OSError:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+def get_skipped_version():
+    path = get_db_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    for it in data:
+                        if it.get("id") == "__app_meta__":
+                            return it.get("skipped_version")
+        except Exception:
+            pass
+    settings = load_settings()
+    return settings.get("skipped_version")
+
+def set_skipped_version(version_str):
+    path = get_db_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                meta_found = False
+                for it in data:
+                    if it.get("id") == "__app_meta__":
+                        it["skipped_version"] = version_str
+                        meta_found = True
+                        break
+                if not meta_found:
+                    data.insert(0, {"id": "__app_meta__", "skipped_version": version_str})
+                tmp_path = path + ".tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                os.replace(tmp_path, path)
+        except Exception:
+            pass
+    settings = load_settings()
+    settings["skipped_version"] = version_str
+    save_settings(settings)
+
 def load_db():
     path = get_db_path()
     if not os.path.exists(path):
@@ -68,7 +140,9 @@ def load_db():
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data if isinstance(data, list) else []
+            if isinstance(data, list):
+                return [it for it in data if it.get("id") != "__app_meta__"]
+            return []
     except (json.JSONDecodeError, OSError):
         return []
 
@@ -76,8 +150,12 @@ def save_db(items):
     path = get_db_path()
     tmp_path = path + ".tmp"
     try:
+        skipped = get_skipped_version()
+        out_list = [x for x in items if x.get("id") != "__app_meta__"]
+        if skipped:
+            out_list.insert(0, {"id": "__app_meta__", "skipped_version": skipped})
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(items, f, ensure_ascii=False, indent=2)
+            json.dump(out_list, f, ensure_ascii=False, indent=2)
         os.replace(tmp_path, path)
     except OSError:
         if os.path.exists(tmp_path):
@@ -85,6 +163,40 @@ def save_db(items):
                 os.remove(tmp_path)
             except OSError:
                 pass
+
+def parse_version_tuple(v_str):
+    if not v_str:
+        return (0,)
+    clean = re.sub(r"[^0-9.]", "", str(v_str))
+    parts = [int(p) for p in clean.split(".") if p.isdigit()]
+    return tuple(parts) if parts else (0,)
+
+def fetch_remote_version():
+    urls = [
+        "https://raw.githubusercontent.com/git-sudo-ai/MarketTraker/main/MarketTracker.py",
+        "https://raw.githubusercontent.com/git-sudo-ai/MarketTraker/main/MarketTrackerV2.py",
+        "https://api.github.com/repos/git-sudo-ai/MarketTraker/releases/latest"
+    ]
+    for u in urls:
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": "MarketTracker-App"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                if resp.status == 200:
+                    txt = resp.read().decode("utf-8", errors="ignore")
+                    if "tag_name" in txt:
+                        try:
+                            d = json.loads(txt)
+                            tag = d.get("tag_name")
+                            if tag:
+                                return re.sub(r"[^0-9.]", "", tag)
+                        except Exception:
+                            pass
+                    m = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", txt)
+                    if m:
+                        return m.group(1).strip()
+        except Exception:
+            continue
+    return None
 
 def send_notification(title, message):
     if sys.platform == "darwin":
@@ -242,94 +354,119 @@ def get_wb_image_candidates(nm, b=None):
         f"{base}/c246x328/1.jpg"
     ]
 
-def extract_safari_tab_source(target_url, prod_id, original_url=""):
+def parse_binary_cookies(file_path):
+    if not os.path.exists(file_path):
+        return []
+    try:
+        with open(file_path, "rb") as f:
+            data = f.read()
+        if data[:4] != b"cook":
+            return []
+        import struct
+        num_pages = struct.unpack(">I", data[4:8])[0]
+        page_sizes = [struct.unpack(">I", data[8+i*4:12+i*4])[0] for i in range(num_pages)]
+        offset = 8 + num_pages * 4
+        cookies = []
+        for p_size in page_sizes:
+            p_data = data[offset:offset+p_size]
+            offset += p_size
+            if p_data[:4] != bytes([0, 0, 1, 0]):
+                continue
+            num_cookies = struct.unpack("<I", p_data[4:8])[0]
+            cookie_offsets = [struct.unpack("<I", p_data[8+i*4:12+i*4])[0] for i in range(num_cookies)]
+            for c_off in cookie_offsets:
+                c_size = struct.unpack("<I", p_data[c_off:c_off+4])[0]
+                c_data = p_data[c_off:c_off+c_size]
+                url_off = struct.unpack("<I", c_data[16:20])[0]
+                name_off = struct.unpack("<I", c_data[20:24])[0]
+                path_off = struct.unpack("<I", c_data[24:28])[0]
+                val_off = struct.unpack("<I", c_data[28:32])[0]
+                domain = c_data[url_off:].split(bytes([0]), 1)[0].decode("utf-8", errors="ignore")
+                name = c_data[name_off:].split(bytes([0]), 1)[0].decode("utf-8", errors="ignore")
+                path = c_data[path_off:].split(bytes([0]), 1)[0].decode("utf-8", errors="ignore")
+                val = c_data[val_off:].split(bytes([0]), 1)[0].decode("utf-8", errors="ignore")
+                if "ozon" in domain:
+                    import Foundation
+                    cookies.append({
+                        Foundation.NSHTTPCookieName: name,
+                        Foundation.NSHTTPCookieValue: val,
+                        Foundation.NSHTTPCookieDomain: domain,
+                        Foundation.NSHTTPCookiePath: path or "/",
+                        Foundation.NSHTTPCookieSecure: "TRUE",
+                    })
+        return cookies
+    except Exception:
+        return []
+
+if sys.platform == "darwin":
+    try:
+        import CoreFoundation
+        import Foundation
+        import AppKit
+        import WebKit
+
+        class OzonNavDelegate(Foundation.NSObject):
+            def webView_didFinishNavigation_(self, wv, nav):
+                self.wv = wv
+                self.poll = 0
+                self.check()
+
+            def check(self):
+                self.poll += 1
+                self.wv.evaluateJavaScript_completionHandler_(
+                    "document.documentElement.outerHTML",
+                    self.handle_html
+                )
+
+            def handle_html(self, html, err):
+                if html and ("webPrice" in html or "state-webPrice" in html):
+                    self.result["html"] = html
+                    CoreFoundation.CFRunLoopStop(CoreFoundation.CFRunLoopGetMain())
+                    return
+                if self.poll < 25:
+                    Foundation.NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+                        0.3, False, lambda t: self.check()
+                    )
+                else:
+                    self.result["html"] = html
+                    CoreFoundation.CFRunLoopStop(CoreFoundation.CFRunLoopGetMain())
+    except Exception:
+        pass
+
+def fetch_ozon_headless_worker(url, prod_id):
     if sys.platform != "darwin":
         return None
     try:
-        id_chk = str(prod_id).replace("\\", "\\\\").replace("\"", "\\\"") if prod_id else ""
-        url_chk = str(target_url).replace("\\", "\\\\").replace("\"", "\\\"") if target_url else ""
-        orig_chk = str(original_url).replace("\\", "\\\\").replace("\"", "\\\"") if original_url else ""
+        cookie_path = os.path.expanduser("~/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies")
+        cookie_props = parse_binary_cookies(cookie_path)
+        store = WebKit.WKWebsiteDataStore.defaultDataStore().httpCookieStore()
+        if cookie_props:
+            for p in cookie_props:
+                c = Foundation.NSHTTPCookie.cookieWithProperties_(p)
+                store.setCookie_completionHandler_(c, None)
 
-        load_url = ""
-        if target_url and target_url.startswith(("http://", "https://")):
-            load_url = target_url
-        elif original_url and original_url.startswith(("http://", "https://")):
-            load_url = original_url
-        elif prod_id:
-            if "wildberries" in str(target_url):
-                load_url = f"https://www.wildberries.ru/catalog/{prod_id}/detail.aspx"
-            else:
-                load_url = f"https://www.ozon.ru/product/{prod_id}/"
-        load_url = load_url.replace("\\", "\\\\").replace("\"", "\\\"")
+        result = {"html": None}
+        delegate = OzonNavDelegate.alloc().init()
+        delegate.result = result
 
-        script = f'''
-        tell application "System Events"
-            set isRunning to (name of processes) contains "Safari"
-        end tell
-        if isRunning then
-            tell application "Safari"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        set u to URL of t
-                        set isMatch to false
-                        if "{id_chk}" is not "" then
-                            if (u contains ("-" & "{id_chk}" & "/") or u contains ("/" & "{id_chk}" & "/") or u contains ("-" & "{id_chk}" & "?") or u contains ("/" & "{id_chk}" & "?")) then
-                                set isMatch to true
-                            end if
-                        else
-                            if ("{url_chk}" is not "" and u contains "{url_chk}") or ("{orig_chk}" is not "" and u contains "{orig_chk}") then
-                                set isMatch to true
-                            end if
-                        end if
-                        if isMatch then
-                            return source of t
-                        end if
-                    end repeat
-                end repeat
-            end tell
-        end if
+        config = WebKit.WKWebViewConfiguration.alloc().init()
+        config.setWebsiteDataStore_(WebKit.WKWebsiteDataStore.defaultDataStore())
+        wv = WebKit.WKWebView.alloc().initWithFrame_configuration_(
+            AppKit.NSMakeRect(0, 0, 800, 600), config
+        )
+        wv.setNavigationDelegate_(delegate)
+        wv.setCustomUserAgent_("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15")
 
-        if "{load_url}" is not "" then
-            tell application "System Events"
-                set isRunning to (name of processes) contains "Safari"
-            end tell
-            if not isRunning then
-                tell application "Safari" to launch
-                delay 0.8
-            end if
-            tell application "Safari"
-                if (count of windows) = 0 then
-                    set newDoc to (make new document with properties {{URL:"{load_url}"}})
-                    repeat 15 times
-                        delay 0.25
-                        set src to source of newDoc
-                        if src contains "webPrice" or src contains "state-webPrice" then
-                            exit repeat
-                        end if
-                    end repeat
-                    set finalSrc to source of newDoc
-                    close newDoc
-                    return finalSrc
-                else
-                    set newTab to (make new tab at end of tabs of window 1 with properties {{URL:"{load_url}"}})
-                    repeat 15 times
-                        delay 0.25
-                        set src to source of newTab
-                        if src contains "webPrice" or src contains "state-webPrice" then
-                            exit repeat
-                        end if
-                    end repeat
-                    set finalSrc to source of newTab
-                    close newTab
-                    return finalSrc
-                end if
-            end tell
-        end if
-        return ""
-        '''
-        res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=8)
-        html = res.stdout
-        return html if html and len(html) > 500 else None
+        ns_url = Foundation.NSURL.URLWithString_(url)
+        req = Foundation.NSURLRequest.requestWithURL_(ns_url)
+        wv.loadRequest_(req)
+
+        timer = Foundation.NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+            12.0, False, lambda t: CoreFoundation.CFRunLoopStop(CoreFoundation.CFRunLoopGetMain())
+        )
+        CoreFoundation.CFRunLoopRun()
+        timer.invalidate()
+        return result["html"]
     except Exception:
         return None
 
@@ -374,7 +511,7 @@ def fetch_wb_details(nm_str: str):
     detected_price = None
     detected_stock = ""
 
-    safari_html = extract_safari_tab_source(f"wildberries.ru/catalog/{nm}", str(nm))
+    safari_html = None
     if safari_html:
         p_matches = re.findall(r'(\d[\d\s]{1,8})\s*₽', safari_html)
         for pm in p_matches:
@@ -655,9 +792,24 @@ def fetch_ozon_details(clean_url: str):
         qs = parse_qs(parsed.query)
         prod_id = qs.get("sku", [None])[0] or ""
 
-    html = extract_safari_tab_source(resolved_url, prod_id, original_url=clean_url)
-    if html:
-        return parse_ozon_html(html, prod_id, resolved_url)
+    if sys.platform == "darwin":
+        try:
+            cur_script = os.path.abspath(__file__)
+            res = subprocess.run(
+                [sys.executable, cur_script, "--fetch-ozon-headless", resolved_url, prod_id],
+                capture_output=True,
+                text=True,
+                timeout=18
+            )
+            out = res.stdout
+            if "__OZON_JSON_START__" in out and "__OZON_JSON_END__" in out:
+                raw_json = out.split("__OZON_JSON_START__")[1].split("__OZON_JSON_END__")[0].strip()
+                if raw_json and raw_json != "{}":
+                    parsed_dict = json.loads(raw_json)
+                    if parsed_dict and parsed_dict.get("title"):
+                        return parsed_dict
+        except Exception:
+            pass
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -1450,7 +1602,10 @@ class App:
     def __init__(self, root):
         self.root = root
         self.items = []
-        self.seconds_left = CHECK_INTERVAL_SEC
+        settings = load_settings()
+        init_min = str(settings.get("interval_min", 4))
+        self.interval_var = tk.StringVar(value=init_min)
+        self.seconds_left = int(init_min) * 60 if init_min.isdigit() and int(init_min) > 0 else CHECK_INTERVAL_SEC
         self.is_checking = False
         self.card_thumbnails = {}
         self.drawer_expanded = False
@@ -1460,12 +1615,13 @@ class App:
 
         self.root.title("Маркетплейс Трекер Цен (WB / Ozon)")
         self.root.geometry(DEFAULT_WINDOW_SIZE)
-        self.root.minsize(680, 560)
+        self.root.minsize(700, 560)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.setup()
         self.load_items()
         self.start_timer()
+        self.check_github_updates_async()
 
         if len(sys.argv) > 1 and sys.argv[1].startswith("http"):
             self.open_add_dialog(initial_url=sys.argv[1])
@@ -1494,17 +1650,27 @@ class App:
         self.add_btn.bind("<Enter>", lambda _e: self.add_btn.config(bg=COLOR_GREEN_HOVER))
         self.add_btn.bind("<Leave>", lambda _e: self.add_btn.config(bg=COLOR_GREEN))
 
-        self.refresh_btn = tk.Label(
-            actions_frame, text="Проверить сейчас",
-            bg="#f1f5f9", fg="#334155",
-            relief="solid", bd=1, cursor="hand2",
-            font=("TkDefaultFont", 9),
-            width=17, pady=5, anchor="center"
-        )
-        self.refresh_btn.pack(side="left", padx=(6, 0))
-        self.refresh_btn.bind("<Button-1>", lambda _e: self.manual_check())
-        self.refresh_btn.bind("<Enter>", lambda _e: self._on_refresh_enter())
-        self.refresh_btn.bind("<Leave>", lambda _e: self._on_refresh_leave())
+        interval_box = tk.Frame(actions_frame, bg="#ffffff")
+        interval_box.pack(side="left", padx=(12, 0))
+
+        tk.Label(interval_box, text="Проверка каждые", font=("TkDefaultFont", 9), bg="#ffffff", fg="#475569").pack(side="left", padx=(0, 4))
+        self.interval_entry = tk.Entry(interval_box, textvariable=self.interval_var, width=3, justify="center", font=("TkDefaultFont", 9))
+        self.interval_entry.pack(side="left")
+        tk.Label(interval_box, text="мин.", font=("TkDefaultFont", 9), bg="#ffffff", fg="#475569").pack(side="left", padx=(4, 0))
+
+        def _validate_interval(P):
+            return len(P) <= 4 and (P == "" or P.isdigit())
+        vcmd = (self.root.register(_validate_interval), "%P")
+        self.interval_entry.config(validate="key", validatecommand=vcmd)
+
+        def _on_interval_change(*_args):
+            sec = self.get_check_interval_seconds()
+            if self.seconds_left > sec:
+                self.seconds_left = sec
+            val_str = self.interval_var.get().strip()
+            if val_str.isdigit() and int(val_str) > 0:
+                save_settings({"interval_min": int(val_str)})
+        self.interval_var.trace_add("write", _on_interval_change)
 
         title_lbl = tk.Label(top_bar, text="Мониторинг цен (WB & Ozon)", font=("TkDefaultFont", 12, "bold"), bg="#ffffff", fg="#0f172a")
         title_lbl.pack(side="left")
@@ -1790,11 +1956,6 @@ class App:
             title_lbl = tk.Label(header_row, text=title_text, font=("TkDefaultFont", 10, "bold"), fg="#0f172a", bg=card_bg, anchor="w", justify="left")
             title_lbl.pack(side="left", fill="x", expand=True)
 
-            var_val = item.get("variant", "")
-            if var_val:
-                var_badge = tk.Label(header_row, text=var_val, font=("TkDefaultFont", 8, "bold"), bg="#e2e8f0", fg="#1e293b", padx=6, pady=2)
-                var_badge.pack(side="right")
-
             price_row = tk.Frame(info_box, bg=card_bg)
             price_row.pack(fill="x", pady=(2, 6))
 
@@ -1965,113 +2126,433 @@ class App:
             dlg.url_var.set(initial_url)
             dlg.trigger_inspect()
 
+    def get_check_interval_seconds(self):
+        try:
+            val_str = self.interval_var.get().strip()
+            if val_str.isdigit():
+                val = int(val_str)
+                if val > 0:
+                    return val * 60
+        except Exception:
+            pass
+        return CHECK_INTERVAL_SEC
+
     def start_timer(self):
         def tick():
             if not self.is_checking:
                 self.seconds_left -= 1
                 if self.seconds_left <= 0:
-                    self.seconds_left = CHECK_INTERVAL_SEC
+                    self.seconds_left = self.get_check_interval_seconds()
                     self.run_background_check()
             self.root.after(1000, tick)
         self.root.after(1000, tick)
-
-    def _on_refresh_enter(self):
-        if not self.is_checking:
-            self.refresh_btn.config(bg="#e2e8f0")
-
-    def _on_refresh_leave(self):
-        if not self.is_checking:
-            self.refresh_btn.config(bg="#f1f5f9")
-
-    def manual_check(self):
-        if self.is_checking:
-            return
-        self.seconds_left = CHECK_INTERVAL_SEC
-        self.run_background_check()
 
     def run_background_check(self):
         if self.is_checking or len(self.items) == 0:
             return
         self.is_checking = True
-        self.refresh_btn.config(text="Проверяю цены", fg="#16a34a", cursor="default")
+        try:
+            self.status_indicator.config(text="Проверяю цены...")
+        except Exception:
+            pass
 
         def worker():
             notified_items = []
-            for item in self.items:
-                res = inspect_product(item["url"])
-                if res:
-                    item["last_checked"] = datetime.now().strftime("%H:%M:%S")
-                    if res.get("title") and "Товар" not in res.get("title"):
-                        item["title"] = res["title"]
+            try:
+                for idx, item in enumerate(self.items):
+                    if idx > 0:
+                        time.sleep(1.2)
+                    res = inspect_product(item["url"])
+                    if res:
+                        item["last_checked"] = datetime.now().strftime("%H:%M:%S")
+                        if res.get("title") and "Товар" not in res.get("title"):
+                            item["title"] = res["title"]
 
-                    var_p = None
-                    var_stock = None
-                    var_tgt = item.get("variant")
-                    sku = item["id"].split("_")[1] if "_" in item.get("id", "") else ""
-                    for vlist in res.get("categories", {}).values():
-                        for v in vlist:
-                            m_name = bool(var_tgt and (v.get("variant_name") == var_tgt or v.get("label") == var_tgt))
-                            m_sku = bool(sku and str(v.get("nm")) == sku)
-                            if m_name or m_sku:
-                                if v.get("price") is not None:
-                                    var_p = v["price"]
-                                if v.get("stock"):
-                                    var_stock = v["stock"]
+                        var_p = None
+                        var_stock = None
+                        var_tgt = item.get("variant")
+                        sku = item["id"].split("_")[1] if "_" in item.get("id", "") else ""
+                        for vlist in res.get("categories", {}).values():
+                            for v in vlist:
+                                m_name = bool(var_tgt and (v.get("variant_name") == var_tgt or v.get("label") == var_tgt))
+                                m_sku = bool(sku and str(v.get("nm")) == sku)
+                                if m_name or m_sku:
+                                    if v.get("price") is not None:
+                                        var_p = v["price"]
+                                    if v.get("stock"):
+                                        var_stock = v["stock"]
+                                    break
+                            if var_p is not None and var_stock:
                                 break
-                        if var_p is not None and var_stock:
-                            break
 
-                    new_p = var_p if var_p is not None else res.get("detected_price")
+                        new_p = var_p if var_p is not None else res.get("detected_price")
 
-                    if res.get("detected_stock") and "остаток" in res.get("detected_stock").lower():
-                        new_stock = res.get("detected_stock")
-                    elif var_stock and "остаток" in var_stock.lower():
-                        new_stock = var_stock
-                    else:
-                        new_stock = res.get("detected_stock") or var_stock
-
-                    if new_stock:
-                        item["stock"] = new_stock
-
-                    if new_p is not None:
-                        item["current_price"] = new_p
-                        tgt = item.get("target_price")
-                        if tgt is not None and new_p <= tgt:
-                            item["status"] = "Готово к покупке"
-                            if not item.get("notified", False):
-                                item["notified"] = True
-                                notified_items.append(item)
+                        if res.get("detected_stock") and "остаток" in res.get("detected_stock").lower():
+                            new_stock = res.get("detected_stock")
+                        elif var_stock and "остаток" in var_stock.lower():
+                            new_stock = var_stock
                         else:
-                            item["status"] = "Отслеживается"
-                            item["notified"] = False
+                            new_stock = res.get("detected_stock") or var_stock
 
-            self.items.sort(key=lambda it: not is_product_ready(it))
-            save_db(self.items)
+                        if new_stock:
+                            item["stock"] = new_stock
 
-            def update_ui():
-                self.is_checking = False
-                self.refresh_btn.config(text="Проверить сейчас", fg="#334155", cursor="hand2")
-                self.render_cards()
+                        if new_p is not None:
+                            item["current_price"] = new_p
+                            tgt = item.get("target_price")
+                            if tgt is not None and new_p <= tgt:
+                                item["status"] = "Готово к покупке"
+                                if not item.get("notified", False):
+                                    item["notified"] = True
+                                    notified_items.append(item)
+                            else:
+                                item["status"] = "Отслеживается"
+                                item["notified"] = False
 
-                for n_item in notified_items:
-                    t = n_item.get("title", "")
-                    p = n_item.get("current_price", "")
-                    tp = n_item.get("target_price", "")
-                    msg = f"Цена на '{t[:35]}' снизилась до {p} ₽ (цель: {tp} ₽)!"
-                    send_notification("Маркетплейс Трекер", msg)
+                self.items.sort(key=lambda it: not is_product_ready(it))
+                save_db(self.items)
+            except Exception:
+                pass
+            finally:
+                def update_ui():
+                    self.is_checking = False
                     try:
-                        self.root.bell()
+                        self.status_indicator.config(text="")
                     except Exception:
                         pass
+                    self.render_cards()
 
-            self.root.after(0, update_ui)
+                    for n_item in notified_items:
+                        t = n_item.get("title", "")
+                        p = n_item.get("current_price", "")
+                        tp = n_item.get("target_price", "")
+                        msg = f"Цена на '{t[:35]}' снизилась до {p} ₽ (цель: {tp} ₽)!"
+                        send_notification("Маркетплейс Трекер", msg)
+                        try:
+                            self.root.bell()
+                        except Exception:
+                            pass
+
+                self.root.after(0, update_ui)
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def check_github_updates_async(self):
+        def worker():
+            try:
+                remote_v = fetch_remote_version()
+                if not remote_v:
+                    return
+                if parse_version_tuple(remote_v) <= parse_version_tuple(__version__):
+                    return
+                skipped = get_skipped_version()
+                if skipped and parse_version_tuple(remote_v) <= parse_version_tuple(skipped):
+                    return
+                self.root.after(0, lambda: self.show_update_dialog(remote_v))
+            except Exception:
+                pass
+        threading.Thread(target=worker, daemon=True).start()
+
+    def show_update_dialog(self, remote_ver):
+        win = tk.Toplevel(self.root)
+        win.title("Обновление приложения")
+        win.configure(bg="#ffffff")
+        win.resizable(False, False)
+        win.transient(self.root)
+
+        w, h = 460, 200
+        try:
+            rx = self.root.winfo_rootx()
+            ry = self.root.winfo_rooty()
+            rw = self.root.winfo_width()
+            rh = self.root.winfo_height()
+            x = rx + max(0, (rw - w) // 2)
+            y = ry + max(0, (rh - h) // 2)
+            win.geometry(f"{w}x{h}+{x}+{y}")
+        except Exception:
+            win.geometry(f"{w}x{h}")
+
+        card = tk.Frame(win, bg="#ffffff", padx=20, pady=16)
+        card.pack(fill="both", expand=True)
+
+        tk.Label(
+            card,
+            text=f"Доступно обновление: v{remote_ver}",
+            font=("TkDefaultFont", 12, "bold"),
+            fg="#0f172a", bg="#ffffff"
+        ).pack(anchor="w", pady=(0, 6))
+
+        tk.Label(
+            card,
+            text=f"Текущая версия программы: v{__version__}. Рекомендуется обновить приложение для стабильной работы и новых функций.",
+            font=("TkDefaultFont", 9),
+            fg="#475569", bg="#ffffff",
+            wraplength=410, justify="left"
+        ).pack(anchor="w", pady=(0, 18))
+
+        btn_bar = tk.Frame(card, bg="#ffffff")
+        btn_bar.pack(fill="x", side="bottom")
+
+        def on_yes():
+            win.destroy()
+            webbrowser.open_new_tab("https://github.com/git-sudo-ai/MarketTraker")
+
+        def on_skip():
+            set_skipped_version(remote_ver)
+            win.destroy()
+
+        btn_yes = tk.Label(
+            btn_bar,
+            text="Да",
+            font=("TkDefaultFont", 9, "bold"),
+            bg="#16a34a", fg="#ffffff",
+            padx=18, pady=6,
+            cursor="hand2", relief="flat"
+        )
+        btn_yes.pack(side="right", padx=(8, 0))
+        btn_yes.bind("<Button-1>", lambda _e: on_yes())
+        btn_yes.bind("<Enter>", lambda _e: btn_yes.config(bg="#15803d"))
+        btn_yes.bind("<Leave>", lambda _e: btn_yes.config(bg="#16a34a"))
+
+        btn_skip = tk.Label(
+            btn_bar,
+            text="Пропустить версию",
+            font=("TkDefaultFont", 9),
+            bg="#f1f5f9", fg="#475569",
+            padx=14, pady=5,
+            cursor="hand2", relief="solid", bd=1
+        )
+        btn_skip.pack(side="right")
+        btn_skip.bind("<Button-1>", lambda _e: on_skip())
+        btn_skip.bind("<Enter>", lambda _e: btn_skip.config(bg="#e2e8f0"))
+        btn_skip.bind("<Leave>", lambda _e: btn_skip.config(bg="#f1f5f9"))
+
+def get_missing_dependencies():
+    missing = []
+    try:
+        import PIL
+    except ImportError:
+        missing.append({
+            "name": "Pillow",
+            "package": "pillow",
+            "desc": "Отображение фотографий товаров, галереи и иконок приложения"
+        })
+    if sys.platform == "darwin":
+        has_webkit = False
+        try:
+            import WebKit
+            import Foundation
+            import AppKit
+            import CoreFoundation
+            has_webkit = True
+        except ImportError:
+            pass
+        if not has_webkit:
+            missing.append({
+                "name": "WebKit для macOS",
+                "package": "pyobjc-framework-WebKit",
+                "desc": "Фоновая проверка цен Ozon без открытия реального окна браузера"
+            })
+    return missing
+
+def show_dependency_dialog(missing_deps):
+    root = tk.Tk()
+    root.title("Установка компонентов")
+    root.configure(bg="#f8fafc")
+    root.resizable(False, False)
+
+    w, h = 540, 480
+    ws = root.winfo_screenwidth()
+    hs = root.winfo_screenheight()
+    x = (ws - w) // 2
+    y = (hs - h) // 2
+    root.geometry(f"{w}x{h}+{x}+{y}")
+
+    card = tk.Frame(root, bg="#ffffff", highlightbackground="#e2e8f0", highlightthickness=1)
+    card.pack(fill="both", expand=True, padx=16, pady=16)
+
+    top_frame = tk.Frame(card, bg="#ffffff")
+    top_frame.pack(fill="x", padx=20, pady=(18, 10))
+
+    title_lbl = tk.Label(
+        top_frame,
+        text="Необходима разовая настройка",
+        font=("SF Pro Display", 16, "bold"),
+        bg="#ffffff",
+        fg="#0f172a"
+    )
+    title_lbl.pack(anchor="w")
+
+    subtitle_lbl = tk.Label(
+        top_frame,
+        text="Для полноценной работы программы требуются дополнительные компоненты. Программа может установить их автоматически.",
+        font=("SF Pro Text", 11),
+        bg="#ffffff",
+        fg="#475569",
+        wraplength=460,
+        justify="left"
+    )
+    subtitle_lbl.pack(anchor="w", pady=(6, 0))
+
+    sys_name = "macOS" if sys.platform == "darwin" else platform.system()
+    sys_info = f"Система: {sys_name} ({platform.machine()}) • Python {platform.python_version()}"
+    badge = tk.Label(
+        card,
+        text=sys_info,
+        font=("SF Pro Text", 9),
+        bg="#f1f5f9",
+        fg="#64748b",
+        padx=8,
+        pady=3
+    )
+    badge.pack(anchor="w", padx=20, pady=(0, 12))
+
+    items_box = tk.Frame(card, bg="#f8fafc", highlightbackground="#cbd5e1", highlightthickness=1)
+    items_box.pack(fill="both", expand=True, padx=20, pady=(0, 14))
+
+    for item in missing_deps:
+        row = tk.Frame(items_box, bg="#f8fafc")
+        row.pack(fill="x", padx=14, pady=10)
+
+        icon_lbl = tk.Label(row, text="📦", font=("SF Pro Text", 14), bg="#f8fafc")
+        icon_lbl.pack(side="left", anchor="n", padx=(0, 10))
+
+        text_col = tk.Frame(row, bg="#f8fafc")
+        text_col.pack(side="left", fill="x", expand=True)
+
+        p_title = tk.Label(
+            text_col,
+            text=f"{item['name']}  ({item['package']})",
+            font=("SF Pro Text", 11, "bold"),
+            bg="#f8fafc",
+            fg="#1e293b"
+        )
+        p_title.pack(anchor="w")
+
+        p_desc = tk.Label(
+            text_col,
+            text=item["desc"],
+            font=("SF Pro Text", 10),
+            bg="#f8fafc",
+            fg="#64748b",
+            wraplength=380,
+            justify="left"
+        )
+        p_desc.pack(anchor="w", pady=(2, 0))
+
+    status_lbl = tk.Label(
+        card,
+        text="",
+        font=("SF Pro Text", 10),
+        bg="#ffffff",
+        fg="#0284c7"
+    )
+    status_lbl.pack(fill="x", padx=20, pady=(0, 8))
+
+    btn_bar = tk.Frame(card, bg="#ffffff")
+    btn_bar.pack(fill="x", padx=20, pady=(0, 18))
+
+    installed_ok = [False]
+
+    def on_install():
+        btn_install.pack_forget()
+        btn_cancel.pack_forget()
+        status_lbl.config(text="Устанавливаю компоненты через pip... Пожалуйста, подождите...", fg="#0284c7")
+        root.update()
+
+        def worker():
+            pkgs = [item["package"] for item in missing_deps]
+            cmd = [sys.executable, "-m", "pip", "install", *pkgs]
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode == 0:
+                def fin_ok():
+                    status_lbl.config(text="Все компоненты успешно установлены! Запускаю...", fg="#16a34a")
+                    installed_ok[0] = True
+                    root.after(1000, root.destroy)
+                root.after(0, fin_ok)
+            else:
+                def fin_err():
+                    err_txt = f"Не удалось установить автоматически. Выполните:\npip install {' '.join(pkgs)}"
+                    status_lbl.config(text=err_txt, fg="#b91c1c")
+                    close_btn = tk.Label(
+                        btn_bar, text="Закрыть", font=("SF Pro Text", 11),
+                        bg="#f1f5f9", fg="#475569", padx=16, pady=7, cursor="hand2", relief="solid", bd=1
+                    )
+                    close_btn.pack(side="right")
+                    close_btn.bind("<Button-1>", lambda _e: (root.destroy(), sys.exit(1)))
+                root.after(0, fin_err)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_cancel():
+        root.destroy()
+        sys.exit(0)
+
+    btn_install = tk.Label(
+        btn_bar,
+        text="Да, установи",
+        font=("SF Pro Text", 11, "bold"),
+        bg="#16a34a",
+        fg="#ffffff",
+        padx=18,
+        pady=8,
+        cursor="hand2",
+        relief="flat"
+    )
+    btn_install.pack(side="right", padx=(10, 0))
+    btn_install.bind("<Button-1>", lambda _e: on_install())
+    btn_install.bind("<Enter>", lambda _e: btn_install.config(bg="#15803d"))
+    btn_install.bind("<Leave>", lambda _e: btn_install.config(bg="#16a34a"))
+
+    btn_cancel = tk.Label(
+        btn_bar,
+        text="Нет, я сам(а)",
+        font=("SF Pro Text", 11),
+        bg="#f8fafc",
+        fg="#475569",
+        padx=16,
+        pady=7,
+        cursor="hand2",
+        relief="solid",
+        bd=1
+    )
+    btn_cancel.pack(side="right")
+    btn_cancel.bind("<Button-1>", lambda _e: on_cancel())
+    btn_cancel.bind("<Enter>", lambda _e: btn_cancel.config(bg="#e2e8f0"))
+    btn_cancel.bind("<Leave>", lambda _e: btn_cancel.config(bg="#f8fafc"))
+
+    root.mainloop()
+    return installed_ok[0]
+
 def main():
+    missing = get_missing_dependencies()
+    if missing:
+        ok = show_dependency_dialog(missing)
+        if not ok:
+            return
+        global HAS_PIL
+        try:
+            from PIL import Image, ImageTk, ImageDraw
+            HAS_PIL = True
+        except ImportError:
+            pass
     root = tk.Tk()
     App(root)
     root.mainloop()
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 4 and sys.argv[1] == "--fetch-ozon-headless":
+        try:
+            os.nice(10)
+        except Exception:
+            pass
+        u = sys.argv[2]
+        pid = sys.argv[3]
+        h = fetch_ozon_headless_worker(u, pid)
+        if h:
+            p = parse_ozon_html(h, pid, u)
+            sys.stdout.write("__OZON_JSON_START__\n" + json.dumps(p, ensure_ascii=False) + "\n__OZON_JSON_END__\n")
+        else:
+            sys.stdout.write("__OZON_JSON_START__\n{}\n__OZON_JSON_END__\n")
+        sys.exit(0)
     main()
