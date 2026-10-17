@@ -4,16 +4,21 @@ import re
 import io
 import json
 import time
+import socket
+import base64
 import threading
 import subprocess
 import webbrowser
 from datetime import datetime
-from urllib.parse import urlparse, parse_qs, urljoin
+from urllib.parse import urlparse, parse_qs, urljoin, quote
 import urllib.request
 import urllib.error
 import tkinter as tk
 from tkinter import ttk
 import platform
+import shutil
+import tempfile
+import html as html_lib
 
 try:
     from PIL import Image, ImageTk, ImageDraw
@@ -28,7 +33,7 @@ if sys.platform == "darwin":
     except Exception:
         pass
 
-__version__ = "2.1"
+__version__ = "2.2"
 __license__ = "GPL-2.0"
 __author__ = "git-sudo-ai"
 
@@ -207,6 +212,13 @@ def send_notification(title, message):
             subprocess.run(["osascript", "-e", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError:
             pass
+    elif sys.platform.startswith("linux"):
+        cmd = shutil.which("notify-send")
+        if cmd:
+            try:
+                subprocess.run([cmd, title, message], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except OSError:
+                pass
 
 def is_product_ready(item):
     cp = item.get("current_price")
@@ -274,6 +286,25 @@ def parse_target_url(raw_url: str):
 
     return "Unknown", None, None
 
+def run_hidden_subprocess(cmd, timeout=10):
+    startupinfo = None
+    creationflags = 0
+    if sys.platform == "win32":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        creationflags = subprocess.CREATE_NO_WINDOW
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="ignore",
+        timeout=timeout,
+        startupinfo=startupinfo,
+        creationflags=creationflags
+    )
+
 def unshorten_url(url: str, max_hops: int = 5) -> str:
     current = url.strip()
     if not current.startswith(("http://", "https://")):
@@ -282,8 +313,9 @@ def unshorten_url(url: str, max_hops: int = 5) -> str:
         current = "https://" + current
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
     }
+    null_target = "NUL" if sys.platform == "win32" else "/dev/null"
 
     for _ in range(max_hops):
         wb_m = re.search(r'/catalog/(\d+)', current) or re.search(r'[?&]card=(\d+)', current)
@@ -294,16 +326,25 @@ def unshorten_url(url: str, max_hops: int = 5) -> str:
         next_url = None
 
         try:
-            cmd = ["curl", "-s", "-D", "-", "-o", "/dev/null", "-m", "4", "-A", headers["User-Agent"], current]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            for line in res.stdout.splitlines():
-                if line.lower().startswith("location:"):
-                    loc = line.split(":", 1)[1].strip()
-                    if loc:
-                        next_url = urljoin(current, loc)
-                        break
+            from curl_cffi import requests as cffi_requests
+            r = cffi_requests.get(current, impersonate="chrome120", timeout=5, allow_redirects=True)
+            if r.url and r.url != current and r.url.startswith("http"):
+                next_url = r.url
         except Exception:
             pass
+
+        if not next_url:
+            try:
+                cmd = ["curl", "-s", "-D", "-", "-o", null_target, "-m", "4", "-A", headers["User-Agent"], current]
+                res = run_hidden_subprocess(cmd, timeout=5)
+                for line in res.stdout.splitlines():
+                    if line.lower().startswith("location:"):
+                        loc = line.split(":", 1)[1].strip()
+                        if loc:
+                            next_url = urljoin(current, loc)
+                            break
+            except Exception:
+                pass
 
         if not next_url:
             class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -326,8 +367,8 @@ def unshorten_url(url: str, max_hops: int = 5) -> str:
 
         if not next_url:
             try:
-                cmd = ["curl", "-s", "-L", "-m", "5", "-o", "/dev/null", "-w", "%{url_effective}", "-A", headers["User-Agent"], current]
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=6)
+                cmd = ["curl", "-s", "-L", "-m", "5", "-o", null_target, "-w", "%{url_effective}", "-A", headers["User-Agent"], current]
+                res = run_hidden_subprocess(cmd, timeout=6)
                 eff = res.stdout.strip()
                 if eff and eff.startswith("http") and eff != current:
                     next_url = eff
@@ -419,11 +460,20 @@ if sys.platform == "darwin":
                 )
 
             def handle_html(self, html, err):
-                if html and ("webPrice" in html or "state-webPrice" in html):
-                    self.result["html"] = html
-                    CoreFoundation.CFRunLoopStop(CoreFoundation.CFRunLoopGetMain())
-                    return
-                if self.poll < 25:
+                if html:
+                    is_ready = False
+                    tgt = getattr(self, "target_url", "")
+                    if "wildberries" in tgt or "wb.ru" in tgt:
+                        if "price-block__wallet-price" in html or "price-block__final-price" in html or "red-price" in html:
+                            is_ready = True
+                    else:
+                        if "webPrice" in html or "state-webPrice" in html or "cardPrice" in html:
+                            is_ready = True
+                    if is_ready:
+                        self.result["html"] = html
+                        CoreFoundation.CFRunLoopStop(CoreFoundation.CFRunLoopGetMain())
+                        return
+                if self.poll < 35:
                     Foundation.NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
                         0.3, False, lambda t: self.check()
                     )
@@ -448,6 +498,7 @@ def fetch_ozon_headless_worker(url, prod_id):
         result = {"html": None}
         delegate = OzonNavDelegate.alloc().init()
         delegate.result = result
+        delegate.target_url = url
 
         config = WebKit.WKWebViewConfiguration.alloc().init()
         config.setWebsiteDataStore_(WebKit.WKWebsiteDataStore.defaultDataStore())
@@ -494,6 +545,39 @@ def fetch_wb_card_data(nm: int):
             pass
     return {}, primary_b
 
+def parse_wb_html(html: str):
+    if not html:
+        return None
+    m_wallet = re.search(r'class=[\'"][^\'"]*price-block__wallet-price[^\'"]*[\'"][^>]*>([^<]+)<', html) or \
+               re.search(r'class=[\'"][^\'"]*red-price[^\'"]*[\'"][^>]*>([^<]+)<', html)
+    if m_wallet:
+        digs = re.sub(r'[^\d]', '', m_wallet.group(1))
+        if digs and 10 <= int(digs) <= 10000000:
+            return int(digs)
+
+    m_final = re.search(r'class=[\'"][^\'"]*price-block__final-price[^\'"]*[\'"][^>]*>([^<]+)<', html) or \
+              re.search(r'itemprop=[\'"]price[\'"][^>]*content=[\'"](\d+)[\'"]', html) or \
+              re.search(r'content=[\'"](\d+)[\'"][^>]*itemprop=[\'"]price[\'"]', html)
+    if m_final:
+        digs = re.sub(r'[^\d]', '', m_final.group(1))
+        if digs and 10 <= int(digs) <= 10000000:
+            return int(digs)
+
+    m_blk = re.search(r'class=[\'"][^\'"]*price-block[^\'"]*[\'"][^>]*>(.*?)</div>\s*</div>', html, re.DOTALL)
+    if m_blk:
+        m_r = re.search(r'(\d[\d\s\xa0]{0,8})\s*(?:₽|&nbsp;₽)', m_blk.group(1))
+        if m_r:
+            digs = re.sub(r'[^\d]', '', m_r.group(1))
+            if digs and 10 <= int(digs) <= 10000000:
+                return int(digs)
+
+    m_any = re.search(r'(\d[\d\s\xa0]{1,8})\s*(?:₽|&nbsp;₽)', html)
+    if m_any:
+        digs = re.sub(r'[^\d]', '', m_any.group(1))
+        if digs and 10 <= int(digs) <= 10000000:
+            return int(digs)
+    return None
+
 def fetch_wb_details(nm_str: str):
     try:
         nm = int(nm_str)
@@ -511,23 +595,169 @@ def fetch_wb_details(nm_str: str):
     detected_price = None
     detected_stock = ""
 
-    safari_html = None
-    if safari_html:
-        p_matches = re.findall(r'(\d[\d\s]{1,8})\s*₽', safari_html)
-        for pm in p_matches:
-            digits = int(re.sub(r'\s+', '', pm))
-            if 50 <= digits <= 2000000:
-                detected_price = digits
+    wb_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Origin": "https://www.wildberries.ru",
+        "Referer": f"https://www.wildberries.ru/catalog/{nm}/detail.aspx"
+    }
+
+    if detected_price is None:
+        vol = nm // 100000
+        part = nm // 1000
+        cand_bs = [b] if b else []
+        for delta in (0, -1, 1, -2, 2):
+            cb = (b or get_basket_number(nm)) + delta
+            if 1 <= cb <= 30 and cb not in cand_bs:
+                cand_bs.append(cb)
+        for cur_b in cand_bs:
+            ph_url = f"https://basket-{cur_b:02d}.wbbasket.ru/vol{vol}/part{part}/{nm}/info/price-history.json"
+            try:
+                req = urllib.request.Request(ph_url, headers=wb_headers)
+                with urllib.request.urlopen(req, timeout=2.5) as resp:
+                    if resp.status == 200:
+                        ph_data = json.loads(resp.read().decode())
+                        if isinstance(ph_data, list) and ph_data:
+                            last_p = ph_data[-1].get("price", {}).get("RUB")
+                            if last_p:
+                                p_int = int(last_p)
+                                detected_price = p_int // 100 if p_int > 500 else p_int
+                                break
+            except Exception:
+                pass
+            if detected_price is not None:
                 break
-        sn_wb = re.search(r'"stockNumber":\s*\{\s*"text":\s*"([^"]+)"', safari_html)
-        if sn_wb:
-            detected_stock = f"Остаток: {sn_wb.group(1).strip()} шт."
-        else:
-            m_wb = re.search(r'(\d+)\s*(?:шт|единиц\w*|штук\w*)\s*осталось', safari_html, re.IGNORECASE)
-            if m_wb:
-                detected_stock = f"Остаток: {m_wb.group(1)} шт."
-            elif "нет в наличии" in safari_html.lower() or "товар закончился" in safari_html.lower():
-                detected_stock = "Нет в наличии"
+
+    if detected_price is None:
+        wb_api_urls = [
+            f"https://card.wb.ru/cards/v2/detail?appType=1&curr=rub&dest=-1257786&spp=30&nm={nm}",
+            f"https://card.wb.ru/cards/v1/detail?appType=1&curr=rub&dest=-1257786&spp=30&nm={nm}",
+            f"https://card.wb.ru/cards/detail?appType=1&curr=rub&dest=-1255987&spp=30&nm={nm}"
+        ]
+
+        for api_u in wb_api_urls:
+            raw_wb_text = None
+            try:
+                from curl_cffi import requests as cffi_requests
+                wb_resp = cffi_requests.get(api_u, headers=wb_headers, impersonate="chrome120", timeout=6)
+                if wb_resp.status_code == 200 and wb_resp.text:
+                    raw_wb_text = wb_resp.text
+            except Exception:
+                pass
+            if not raw_wb_text:
+                try:
+                    wb_req = urllib.request.Request(api_u, headers=wb_headers)
+                    with urllib.request.urlopen(wb_req, timeout=5) as resp:
+                        if resp.status == 200:
+                            raw_wb_text = resp.read().decode("utf-8", errors="ignore")
+                except Exception:
+                    pass
+            if not raw_wb_text:
+                try:
+                    cmd = ["curl", "-s", "-m", "5", "-A", wb_headers["User-Agent"], "-H", "Origin: https://www.wildberries.ru", "-H", f"Referer: https://www.wildberries.ru/catalog/{nm}/detail.aspx", "-H", "Accept: */*", api_u]
+                    res = run_hidden_subprocess(cmd, timeout=6)
+                    if res.stdout and "products" in res.stdout:
+                        raw_wb_text = res.stdout
+                except Exception:
+                    pass
+            if raw_wb_text:
+                try:
+                    wb_json = json.loads(raw_wb_text)
+                    wb_prods = wb_json.get("data", {}).get("products", [])
+                    if wb_prods:
+                        p_obj = wb_prods[0]
+                        cand_p = p_obj.get("salePriceU") or p_obj.get("priceU")
+                        if not cand_p:
+                            for s_item in p_obj.get("sizes", []):
+                                p_val = s_item.get("price")
+                                if isinstance(p_val, dict):
+                                    cand_p = p_val.get("total") or p_val.get("product") or p_val.get("basic")
+                                elif isinstance(p_val, (int, float)):
+                                    cand_p = p_val
+                                if not cand_p:
+                                    cand_p = s_item.get("salePriceU") or s_item.get("sum")
+                                if cand_p:
+                                    break
+                        if cand_p:
+                            p_int = int(cand_p)
+                            detected_price = p_int // 100 if p_int > 500 else p_int
+                            break
+                except Exception:
+                    pass
+
+    wb_page_url = f"https://www.wildberries.ru/catalog/{nm}/detail.aspx"
+    if detected_price is None:
+        try:
+            page_html = None
+            try:
+                from curl_cffi import requests as cffi_requests
+                p_resp = cffi_requests.get(wb_page_url, headers=wb_headers, impersonate="chrome120", timeout=6)
+                if p_resp.status_code == 200 and p_resp.text:
+                    page_html = p_resp.text
+            except Exception:
+                pass
+            if not page_html:
+                try:
+                    req = urllib.request.Request(wb_page_url, headers=wb_headers)
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        page_html = resp.read().decode("utf-8", errors="ignore")
+                except Exception:
+                    pass
+            if not page_html:
+                try:
+                    cmd = ["curl", "-s", "-L", "-m", "6", "-A", wb_headers["User-Agent"], wb_page_url]
+                    res = run_hidden_subprocess(cmd, timeout=8)
+                    if res.stdout and len(res.stdout) > 500:
+                        page_html = res.stdout
+                except Exception:
+                    pass
+            if page_html:
+                p_from_html = parse_wb_html(page_html)
+                if p_from_html is not None:
+                    detected_price = p_from_html
+        except Exception:
+            pass
+
+    if detected_price is None:
+        if sys.platform == "win32":
+            wb_path = find_windows_browser()
+            if wb_path:
+                cdp_html = fetch_ozon_cdp(wb_path, wb_page_url)
+                if not cdp_html:
+                    cdp_html = fetch_ozon_headless_windows(wb_path, wb_page_url)
+                if cdp_html:
+                    p_from_cdp = parse_wb_html(cdp_html)
+                    if p_from_cdp is not None:
+                        detected_price = p_from_cdp
+        elif sys.platform.startswith("linux"):
+            lb_path = find_linux_browser()
+            if lb_path:
+                cdp_html = fetch_ozon_cdp(lb_path, wb_page_url)
+                if not cdp_html:
+                    cdp_html = fetch_ozon_headless_linux(lb_path, wb_page_url)
+                if cdp_html:
+                    p_from_cdp = parse_wb_html(cdp_html)
+                    if p_from_cdp is not None:
+                        detected_price = p_from_cdp
+        elif sys.platform == "darwin":
+            try:
+                cur_script = os.path.abspath(__file__)
+                res = subprocess.run(
+                    [sys.executable, cur_script, "--fetch-wb-headless", wb_page_url, str(nm)],
+                    capture_output=True,
+                    text=True,
+                    timeout=18
+                )
+                out = res.stdout
+                if "__WB_JSON_START__" in out and "__WB_JSON_END__" in out:
+                    raw_json = out.split("__WB_JSON_START__")[1].split("__WB_JSON_END__")[0].strip()
+                    if raw_json and raw_json != "{}":
+                        parsed_dict = json.loads(raw_json)
+                        if parsed_dict and parsed_dict.get("detected_price"):
+                            detected_price = parsed_dict["detected_price"]
+            except Exception:
+                pass
 
     if not detected_stock and card_data:
         detected_stock = "В наличии"
@@ -541,6 +771,23 @@ def fetch_wb_details(nm_str: str):
             c_cands = get_wb_image_candidates(c, cb)
             cimg = c_cands[0]
             is_cur = (c == nm)
+            var_p = detected_price if is_cur else None
+            if not is_cur:
+                try:
+                    c_vol = c // 100000
+                    c_part = c // 1000
+                    c_ph = f"https://basket-{cb:02d}.wbbasket.ru/vol{c_vol}/part{c_part}/{c}/info/price-history.json"
+                    c_req = urllib.request.Request(c_ph, headers=wb_headers)
+                    with urllib.request.urlopen(c_req, timeout=1.5) as c_resp:
+                        if c_resp.status == 200:
+                            c_data = json.loads(c_resp.read().decode())
+                            if isinstance(c_data, list) and c_data:
+                                cp = c_data[-1].get("price", {}).get("RUB")
+                                if cp:
+                                    c_int = int(cp)
+                                    var_p = c_int // 100 if c_int > 500 else c_int
+                except Exception:
+                    pass
             label = f"Арт. {c}" + (" (текущий)" if is_cur else "")
             color_variants.append({
                 "label": label,
@@ -549,7 +796,7 @@ def fetch_wb_details(nm_str: str):
                 "url": f"https://www.wildberries.ru/catalog/{c}/detail.aspx",
                 "image_url": cimg,
                 "image_candidates": c_cands,
-                "price": detected_price if is_cur else None,
+                "price": var_p,
                 "stock": detected_stock if is_cur else "В наличии",
                 "is_default": is_cur
             })
@@ -601,14 +848,56 @@ def clean_slug_title(slug_str: str):
 def parse_ozon_html(html: str, prod_id: str, original_url: str):
     title = None
     detected_price = None
+    schema_price = None
     detected_stock = ""
     default_img = ""
     gallery_imgs = []
     categories = {}
 
+    for s in re.findall(r'<script[^>]+type=[\'"]application/ld\+json[\'"][^>]*>(.*?)</script>', html, re.DOTALL):
+        try:
+            raw_s = html_lib.unescape(s.strip())
+            d = json.loads(raw_s)
+            items = d if isinstance(d, list) else [d]
+            for it in items:
+                if isinstance(it, dict) and it.get("@type") == "Product":
+                    if not title and it.get("name"):
+                        title = str(it["name"]).strip()
+                    if not default_img and it.get("image"):
+                        im = it["image"]
+                        if isinstance(im, list) and im:
+                            default_img = str(im[0])
+                            gallery_imgs.extend([str(x) for x in im])
+                        elif isinstance(im, str):
+                            default_img = im
+                    offers = it.get("offers")
+                    if offers:
+                        off_list = offers if isinstance(offers, list) else [offers]
+                        for off in off_list:
+                            if isinstance(off, dict):
+                                p_val = off.get("price")
+                                if p_val is not None and schema_price is None:
+                                    try:
+                                        p_clean = int(float(str(p_val).replace(",", ".").replace(" ", "")))
+                                        if 10 <= p_clean <= 10000000:
+                                            schema_price = p_clean
+                                    except Exception:
+                                        pass
+                                avail = str(off.get("availability") or "")
+                                if "InStock" in avail:
+                                    detected_stock = "В наличии"
+                                elif "OutOfStock" in avail:
+                                    detected_stock = "Нет в наличии"
+        except Exception:
+            pass
+
     state_map = {}
-    for st, _q, content in re.findall(r'<div id="state-([^"]+)" data-state=([\'"])(.*?)\2>', html):
-        state_map[st] = content
+    for m in re.finditer(r'data-widget="([^"]+)"[^>]*data-state=([\'"])(.*?)\2', html, re.DOTALL):
+        state_map[m.group(1)] = html_lib.unescape(m.group(3))
+    for m in re.finditer(r'data-state=([\'"])(.*?)\1[^>]*data-widget="([^"]+)"', html, re.DOTALL):
+        state_map[m.group(3)] = html_lib.unescape(m.group(2))
+    for m in re.finditer(r'id="state-([^"]+)"[^>]*data-state=([\'"])(.*?)\2', html, re.DOTALL):
+        state_map[m.group(1)] = html_lib.unescape(m.group(3))
 
     fr_val = None
     fr_matches = re.findall(r'"sku":\s*"' + re.escape(str(prod_id)) + r'"[^}]*"freeRest":\s*(\d+)', html)
@@ -632,7 +921,7 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
             detected_stock = f"Остаток: {exact_count} шт."
         else:
             detected_stock = "Нет в наличии"
-    else:
+    elif not detected_stock:
         m_ost = re.search(r'(\d+)\s*(?:шт|единиц\w*|штук\w*)\s*осталось', html, re.IGNORECASE)
         if m_ost:
             detected_stock = f"Остаток: {m_ost.group(1)} шт."
@@ -642,7 +931,7 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
             detected_stock = "В наличии"
 
     for k, v in state_map.items():
-        if "webProductHeading" in k:
+        if "webProductHeading" in k and not title:
             try:
                 hd = json.loads(v)
                 if hd.get("title"):
@@ -655,21 +944,39 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
         if "webPrice" in k:
             try:
                 wp = json.loads(v)
-                raw = wp.get("cardPrice") or wp.get("price")
-                if raw:
-                    digits = re.sub(r'[^\d]', '', str(raw))
-                    if digits:
-                        detected_price = int(digits)
+                raw_card = wp.get("cardPrice") or wp.get("cardPriceDecimal") or wp.get("priceWithCard") or wp.get("priceWithOzonCard")
+                raw_reg = wp.get("price") or wp.get("priceDecimal") or wp.get("finalPrice")
+                if raw_card:
+                    c_dig = re.sub(r'[^\d]', '', str(raw_card))
+                    if c_dig and 10 <= int(c_dig) <= 10000000:
+                        detected_price = int(c_dig)
                         break
+                elif raw_reg and detected_price is None:
+                    r_dig = re.sub(r'[^\d]', '', str(raw_reg))
+                    if r_dig and 10 <= int(r_dig) <= 10000000:
+                        detected_price = int(r_dig)
             except Exception:
                 pass
+
+    if detected_price is None:
+        m_card = re.search(r'"(?:cardPrice|cardPriceDecimal|priceWithCard|priceWithOzonCard)":\s*"?(\d[\d\s]{1,8}(?:\.\d+)?)"?', html)
+        if m_card:
+            try:
+                digits = int(float(re.sub(r'[^\d.]', '', m_card.group(1))))
+                if 10 <= digits <= 10000000:
+                    detected_price = digits
+            except Exception:
+                pass
+
+    if detected_price is None and schema_price is not None:
+        detected_price = schema_price
 
     for k, v in state_map.items():
         if "webGallery" in k:
             try:
                 wg = json.loads(v)
                 cov = wg.get("coverImage")
-                if cov:
+                if cov and not default_img:
                     default_img = cov
                 for im in wg.get("images", []):
                     src = im.get("src") if isinstance(im, dict) else im
@@ -733,17 +1040,35 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
                 pass
 
     if not title:
-        og_t = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](.*?)["\']', html)
+        og_t = re.search(r'<meta[^>]+property=[\'"]og:title[\'"][^>]+content=[\'"](.*?)[\'"]', html) or \
+               re.search(r'<meta[^>]+content=[\'"](.*?)[\'"][^>]+property=[\'"]og:title[\'"]', html) or \
+               re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
         if og_t:
-            title = og_t.group(1).strip()
+            raw_t = html_lib.unescape(og_t.group(1).strip())
+            raw_t = re.sub(r'\s*[-|]\s*купить\s.*$', '', raw_t, flags=re.IGNORECASE)
+            raw_t = re.sub(r'\s*[-|]\s*OZON.*$', '', raw_t, flags=re.IGNORECASE).strip()
+            if raw_t and "похоже, нет соединения" not in raw_t.lower() and "доступ ограничен" not in raw_t.lower():
+                title = raw_t
 
     if not default_img:
-        og_i = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](.*?)["\']', html)
-        if og_i and "logo" not in og_i.group(1).lower():
-            default_img = og_i.group(1).strip()
+        og_i = re.search(r'<meta[^>]+property=[\'"]og:image[\'"][^>]+content=[\'"](.*?)[\'"]', html) or \
+               re.search(r'<meta[^>]+content=[\'"](.*?)[\'"][^>]+property=[\'"]og:image[\'"]', html) or \
+               re.search(r'<meta[^>]+name=[\'"]twitter:image[\'"][^>]+content=[\'"](.*?)[\'"]', html) or \
+               re.search(r'<link[^>]+rel=[\'"]image_src[\'"][^>]+href=[\'"](.*?)[\'"]', html)
+        if og_i:
+            cand = html_lib.unescape(og_i.group(1).strip())
+            if "logo" not in cand.lower():
+                default_img = cand
 
     if not default_img and gallery_imgs:
         default_img = gallery_imgs[0]
+
+    if not default_img:
+        ozon_imgs = re.findall(r'https://(?:[a-z0-9-]+\.)?ozone\.ru/s3/multimedia-[^"\'\s>]+\.(?:jpg|jpeg|png|webp)', html)
+        for im in ozon_imgs:
+            if "logo" not in im.lower() and "warn" not in im.lower():
+                default_img = im
+                break
 
     if detected_price is None:
         p_matches = re.findall(r'(\d[\d\s]{1,8})\s*₽', html)
@@ -752,6 +1077,16 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
             if 50 <= digits <= 2000000:
                 detected_price = digits
                 break
+
+    if detected_price is None:
+        p_json = re.search(r'"(?:cardPrice|price|finalPrice|priceWithCard|priceWithOzonCard)":\s*"?(\d[\d\s]{1,8}(?:\.\d+)?)"?', html)
+        if p_json:
+            try:
+                digits = int(float(re.sub(r'[^\d.]', '', p_json.group(1))))
+                if 50 <= digits <= 2000000:
+                    detected_price = digits
+            except Exception:
+                pass
 
     if not categories:
         categories["Вариант"] = [{
@@ -776,6 +1111,772 @@ def parse_ozon_html(html: str, prod_id: str, original_url: str):
         "categories": categories
     }
 
+OZON_CFFI_SESSION = None
+
+def get_ozon_cffi_session():
+    global OZON_CFFI_SESSION
+    if OZON_CFFI_SESSION is None:
+        try:
+            from curl_cffi import requests as cffi_requests
+            OZON_CFFI_SESSION = cffi_requests.Session()
+        except Exception:
+            return None
+    return OZON_CFFI_SESSION
+
+def fetch_ozon_curl_cffi(url):
+    sess = get_ozon_cffi_session()
+    if not sess:
+        return None
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Sec-Ch-Ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1"
+    }
+    try:
+        resp = sess.get(url, headers=headers, impersonate="chrome120", timeout=14)
+        if resp.status_code == 200 and resp.text and len(resp.text) > 1000:
+            if "Похоже, нет соединения" not in resp.text and "Antibot Challenge" not in resp.text:
+                return resp.text
+    except Exception:
+        pass
+    return None
+
+def fetch_ozon_composer_api(url, prod_id):
+    sess = get_ozon_cffi_session()
+    if not sess:
+        return None
+    try:
+        parsed = urlparse(url)
+        rel_path = parsed.path
+        if not rel_path.startswith("/product/"):
+            rel_path = f"/product/{prod_id}/" if prod_id else rel_path
+        api_url = f"https://www.ozon.ru/api/composer-api.bx/page/json/v2?url={quote(rel_path)}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": "https://www.ozon.ru/"
+        }
+        resp = sess.get(api_url, headers=headers, impersonate="chrome120", timeout=10)
+        if resp.status_code == 200 and resp.text:
+            data = json.loads(resp.text)
+            ws = data.get("widgetStates", {})
+            if ws:
+                fake_html = ""
+                for k, v in ws.items():
+                    v_str = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
+                    escaped_v = html_lib.escape(v_str, quote=True)
+                    fake_html += f'<div data-widget="{k}" data-state="{escaped_v}"></div>\n'
+                parsed = parse_ozon_html(fake_html, prod_id, url)
+                if parsed and (parsed.get("detected_price") is not None or parsed.get("default_image")):
+                    return parsed
+    except Exception:
+        pass
+    return None
+
+def find_windows_browser():
+    if sys.platform != "win32":
+        return None
+    try:
+        import winreg
+        for exe in ("msedge.exe", "chrome.exe", "browser.exe"):
+            for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                try:
+                    with winreg.OpenKey(hive, rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe}") as k:
+                        val, _ = winreg.QueryValueEx(k, "")
+                        if val and os.path.exists(val):
+                            return val
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    candidates = [
+        os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"), r"Microsoft\Edge\Application\msedge.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), r"Microsoft\Edge\Application\msedge.exe"),
+        os.path.join(os.environ.get("PROGRAMW6432", r"C:\Program Files"), r"Microsoft\Edge\Application\msedge.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Microsoft\Edge\Application\msedge.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), r"Google\Chrome\Application\chrome.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"), r"Google\Chrome\Application\chrome.exe"),
+        os.path.join(os.environ.get("PROGRAMW6432", r"C:\Program Files"), r"Google\Chrome\Application\chrome.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Google\Chrome\Application\chrome.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Yandex\YandexBrowser\Application\browser.exe"),
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    for name in ("msedge", "chrome", "google-chrome", "browser"):
+        f = shutil.which(name)
+        if f:
+            return f
+    return None
+
+def ws_handshake(sock, host, path):
+    key = base64.b64encode(os.urandom(16)).decode()
+    req = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}\r\n"
+        f"Upgrade: websocket\r\n"
+        f"Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\n"
+        f"Sec-WebSocket-Version: 13\r\n"
+        f"Origin: http://{host}\r\n\r\n"
+    )
+    sock.sendall(req.encode())
+    resp = b""
+    while b"\r\n\r\n" not in resp:
+        chunk = sock.recv(1024)
+        if not chunk:
+            break
+        resp += chunk
+    return b"101 Switching Protocols" in resp
+
+def ws_send(sock, msg_str):
+    data = msg_str.encode("utf-8")
+    l = len(data)
+    mask = os.urandom(4)
+    if l <= 125:
+        header = bytes([0x81, 0x80 | l]) + mask
+    elif l <= 65535:
+        header = bytes([0x81, 0x80 | 126]) + l.to_bytes(2, "big") + mask
+    else:
+        header = bytes([0x81, 0x80 | 127]) + l.to_bytes(8, "big") + mask
+    masked = bytes([data[i] ^ mask[i % 4] for i in range(l)])
+    sock.sendall(header + masked)
+
+def recv_exact(sock, n):
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = sock.recv(min(32768, n - len(buf)))
+        if not chunk:
+            break
+        buf.extend(chunk)
+    return bytes(buf)
+
+def ws_recv_message(sock):
+    msg_bytes = bytearray()
+    while True:
+        head = recv_exact(sock, 2)
+        if len(head) < 2:
+            return None
+        b1, b2 = head[0], head[1]
+        is_fin = bool(b1 & 0x80)
+        is_masked = bool(b2 & 0x80)
+        l = b2 & 0x7F
+        if l == 126:
+            len_b = recv_exact(sock, 2)
+            if len(len_b) < 2:
+                return None
+            l = int.from_bytes(len_b, "big")
+        elif l == 127:
+            len_b = recv_exact(sock, 8)
+            if len(len_b) < 8:
+                return None
+            l = int.from_bytes(len_b, "big")
+        mask = recv_exact(sock, 4) if is_masked else b""
+        payload = recv_exact(sock, l)
+        if is_masked and mask:
+            payload = bytes([payload[i] ^ mask[i % 4] for i in range(len(payload))])
+        msg_bytes.extend(payload)
+        if is_fin:
+            break
+    return msg_bytes.decode("utf-8", errors="ignore")
+
+def cdp_call(sock, method, params=None, msg_id=1, timeout=5.0):
+    cmd = {"id": msg_id, "method": method, "params": params or {}}
+    ws_send(sock, json.dumps(cmd))
+    start_t = time.time()
+    while time.time() - start_t < timeout:
+        raw = ws_recv_message(sock)
+        if not raw:
+            break
+        try:
+            d = json.loads(raw)
+            if d.get("id") == msg_id:
+                return d
+        except Exception:
+            pass
+    return None
+
+def fetch_ozon_cdp(browser_path, url):
+    profile_dir = tempfile.mkdtemp(prefix="mt_br_")
+    cmd = [
+        browser_path,
+        "--remote-debugging-port=0",
+        f"--user-data-dir={profile_dir}",
+        "--headless=new",
+        "--disable-gpu",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1920,1080",
+        "--lang=ru-RU,ru",
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "about:blank"
+    ]
+
+    startupinfo = None
+    creationflags = 0
+    if sys.platform == "win32":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        creationflags = subprocess.CREATE_NO_WINDOW
+
+    proc = None
+    sock = None
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            startupinfo=startupinfo,
+            creationflags=creationflags
+        )
+
+        port_file = os.path.join(profile_dir, "DevToolsActivePort")
+        port = None
+        for _ in range(35):
+            time.sleep(0.15)
+            if os.path.exists(port_file):
+                try:
+                    with open(port_file, "r", encoding="utf-8") as pf:
+                        lines = [ln.strip() for ln in pf.readlines() if ln.strip()]
+                        if len(lines) >= 1 and lines[0].isdigit():
+                            port = int(lines[0])
+                            break
+                except Exception:
+                    pass
+
+        if not port:
+            try:
+                proc.terminate()
+                proc.wait(1)
+            except Exception:
+                pass
+            cmd_classic = list(cmd)
+            cmd_classic[cmd_classic.index("--headless=new")] = "--headless"
+            proc = subprocess.Popen(
+                cmd_classic,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                startupinfo=startupinfo,
+                creationflags=creationflags
+            )
+            for _ in range(35):
+                time.sleep(0.15)
+                if os.path.exists(port_file):
+                    try:
+                        with open(port_file, "r", encoding="utf-8") as pf:
+                            lines = [ln.strip() for ln in pf.readlines() if ln.strip()]
+                            if len(lines) >= 1 and lines[0].isdigit():
+                                port = int(lines[0])
+                                break
+                    except Exception:
+                        pass
+
+        if not port:
+            return None
+
+        ws_url = None
+        for _ in range(30):
+            time.sleep(0.15)
+            try:
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/json/list")
+                with urllib.request.urlopen(req, timeout=1.5) as resp:
+                    tabs = json.loads(resp.read().decode())
+                    for t in tabs:
+                        if t.get("type") == "page" and t.get("webSocketDebuggerUrl"):
+                            ws_url = t["webSocketDebuggerUrl"]
+                            break
+                    if ws_url:
+                        break
+            except Exception:
+                pass
+
+        if not ws_url:
+            try:
+                req_new = urllib.request.Request(f"http://127.0.0.1:{port}/json/new?about:blank", method="PUT")
+                with urllib.request.urlopen(req_new, timeout=2.0) as resp:
+                    t = json.loads(resp.read().decode())
+                    ws_url = t.get("webSocketDebuggerUrl")
+            except Exception:
+                pass
+
+        if not ws_url:
+            return None
+
+        parsed_ws = urlparse(ws_url)
+        ws_host = parsed_ws.hostname or "127.0.0.1"
+        ws_port = parsed_ws.port or port
+        ws_path = parsed_ws.path + ("?" + parsed_ws.query if parsed_ws.query else "")
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(6.0)
+        sock.connect((ws_host, ws_port))
+
+        if not ws_handshake(sock, f"{ws_host}:{ws_port}", ws_path):
+            return None
+
+        cdp_call(sock, "Page.enable", msg_id=1, timeout=2.0)
+        cdp_call(sock, "Runtime.enable", msg_id=2, timeout=2.0)
+        cdp_call(sock, "Page.addScriptToEvaluateOnNewDocument", {
+            "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined}); window.chrome = { runtime: {} }; Object.defineProperty(navigator, 'languages', {get: () => ['ru-RU', 'ru', 'en-US', 'en']}); Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});"
+        }, msg_id=3, timeout=2.0)
+        cdp_call(sock, "Page.navigate", {"url": url}, msg_id=4, timeout=3.0)
+
+        is_wb = ("wildberries" in url or "wb.ru" in url)
+        msg_id = 10
+        for i in range(35):
+            time.sleep(0.4)
+            msg_id += 1
+            res = cdp_call(sock, "Runtime.evaluate", {
+                "expression": "document.documentElement.outerHTML"
+            }, msg_id=msg_id, timeout=3.0)
+            if res:
+                val = res.get("result", {}).get("result", {}).get("value")
+                if val:
+                    if is_wb:
+                        if ("price-block__wallet-price" in val or "price-block__final-price" in val or ("price-block" in val and "₽" in val)):
+                            if "__wbaas" not in val or i > 12:
+                                return val
+                    else:
+                        if ("webPrice" in val or "cardPrice" in val or "state-webPrice" in val or "schema.org/Product" in val or "webProductHeading" in val or "webGallery" in val):
+                            if "Похоже, нет соединения" not in val and "Antibot Challenge" not in val and "Проверка безопасности" not in val:
+                                return val
+                    if i >= 20 and len(val) > 4000:
+                        if "Похоже, нет соединения" not in val and "Antibot Challenge" not in val and "__wbaas" not in val:
+                            return val
+        return None
+    except Exception:
+        return None
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except Exception:
+                pass
+        if proc:
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        if profile_dir:
+            try:
+                shutil.rmtree(profile_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+def fetch_ozon_headless_windows(browser_path, url):
+    profile_dir = tempfile.mkdtemp(prefix="mt_br_hw_")
+    try:
+        base_args = [
+            browser_path,
+            f"--user-data-dir={profile_dir}",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-blink-features=AutomationControlled",
+            "--window-size=1920,1080",
+            "--lang=ru-RU,ru"
+        ]
+        try:
+            cmd1 = base_args + ["--headless=new", "--timeout=8000", "--dump-dom", url]
+            res1 = run_hidden_subprocess(cmd1, timeout=18)
+            out1 = res1.stdout or ""
+            if out1 and ("webPrice" in out1 or "cardPrice" in out1 or "schema.org/Product" in out1 or "ir.ozone.ru" in out1):
+                return out1
+        except Exception:
+            pass
+        try:
+            cmd2 = base_args + ["--headless", "--virtual-time-budget=7000", "--dump-dom", url]
+            res2 = run_hidden_subprocess(cmd2, timeout=18)
+            out2 = res2.stdout or ""
+            if out2 and ("webPrice" in out2 or "cardPrice" in out2 or "schema.org/Product" in out2 or "ir.ozone.ru" in out2):
+                return out2
+            if out2 and len(out2) > 1000 and "Похоже, нет соединения" not in out2 and "Antibot Challenge" not in out2:
+                return out2
+        except Exception:
+            pass
+        return None
+    finally:
+        if profile_dir:
+            try:
+                shutil.rmtree(profile_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+def find_linux_browser():
+    if not sys.platform.startswith("linux"):
+        return None
+    candidates = [
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/snap/bin/chromium",
+        "/snap/bin/google-chrome",
+        "/var/lib/flatpak/exports/bin/org.chromium.Chromium",
+        "/var/lib/flatpak/exports/bin/com.google.Chrome",
+        "/usr/bin/microsoft-edge",
+        "/usr/bin/microsoft-edge-stable",
+        "/usr/bin/brave-browser",
+        "/usr/bin/opera",
+        "/usr/bin/vivaldi"
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    for name in (
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+        "microsoft-edge",
+        "microsoft-edge-stable",
+        "brave-browser",
+        "opera",
+        "vivaldi"
+    ):
+        f = shutil.which(name)
+        if f:
+            return f
+    return None
+
+def fetch_ozon_headless_linux(browser_path, url):
+    profile_dir = tempfile.mkdtemp(prefix="mt_br_hl_")
+    try:
+        base_args = [
+            browser_path,
+            f"--user-data-dir={profile_dir}",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-blink-features=AutomationControlled",
+            "--window-size=1920,1080",
+            "--lang=ru-RU,ru"
+        ]
+        try:
+            cmd1 = base_args + ["--headless=new", "--timeout=8000", "--dump-dom", url]
+            res1 = run_hidden_subprocess(cmd1, timeout=18)
+            out1 = res1.stdout or ""
+            if out1 and ("webPrice" in out1 or "cardPrice" in out1 or "schema.org/Product" in out1 or "ir.ozone.ru" in out1):
+                return out1
+        except Exception:
+            pass
+        try:
+            cmd2 = base_args + ["--headless", "--virtual-time-budget=7000", "--dump-dom", url]
+            res2 = run_hidden_subprocess(cmd2, timeout=18)
+            out2 = res2.stdout or ""
+            if out2 and ("webPrice" in out2 or "cardPrice" in out2 or "schema.org/Product" in out2 or "ir.ozone.ru" in out2):
+                return out2
+            if out2 and len(out2) > 1000 and "Похоже, нет соединения" not in out2 and "Antibot Challenge" not in out2:
+                return out2
+        except Exception:
+            pass
+        return None
+    finally:
+        if profile_dir:
+            try:
+                shutil.rmtree(profile_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+def parse_ozon_from_ui_texts(texts, tab_title, prod_id, original_url):
+    title = None
+    detected_price = None
+    detected_stock = ""
+    default_img = ""
+    gallery_imgs = []
+
+    if tab_title:
+        clean_t = tab_title
+        for cut in ("Google Chrome", "Microsoft Edge", "Яндекс Браузер", "Mozilla Firefox", "Brave", "Opera"):
+            clean_t = clean_t.replace(cut, "").strip()
+        m_cut = re.search(r'(.*?)(?:\s+[\W_]+\s+(?:купить|интернет-магазине|OZON|Озон)|\s+(?:OZON|Озон))', clean_t, flags=re.IGNORECASE)
+        if m_cut and len(m_cut.group(1).strip()) > 3:
+            clean_t = m_cut.group(1).strip()
+        clean_t = clean_t.rstrip("-| :").strip()
+        clean_t = re.sub(r'\(\d+\)$', '', clean_t).strip()
+        if clean_t and len(clean_t) > 3:
+            title = clean_t
+
+    card_price = None
+    reg_price = None
+
+    for i, t in enumerate(texts):
+        if not t:
+            continue
+        if not title and len(t) > 10 and not any(ch in t for ch in ("₽", "руб", "Ozon", "Корзин", "Доставк", "Отзыв")):
+            title = t
+        if "ozone.ru" in t or "ozon.ru" in t:
+            m_img = re.search(r'https://[^\s"]+(?:ozone|ozon)\.ru[^\s"]+', t)
+            if m_img:
+                img_u = m_img.group(0)
+                if not default_img:
+                    default_img = img_u
+                gallery_imgs.append(img_u)
+
+        target_str = t
+        if t.strip() in ("₽", "руб", "руб.") and i > 0 and texts[i - 1]:
+            target_str = texts[i - 1] + " " + t
+        elif i + 1 < len(texts) and texts[i + 1].strip() in ("₽", "руб", "руб."):
+            target_str = t + " " + texts[i + 1]
+
+        if "₽" in target_str or "руб" in target_str:
+            m_p = re.search(r'(\d[\d\s]*)\s*(?:₽|руб)', target_str)
+            if m_p:
+                p_digits = int(re.sub(r'\s+', '', m_p.group(1)))
+                if 10 <= p_digits <= 10000000:
+                    context_window = " ".join(texts[max(0, i - 2):min(len(texts), i + 3)]).lower()
+                    if "c ozon" in context_window or "с ozon" in context_window or "ozon карт" in context_window or "озон карт" in context_window:
+                        if card_price is None:
+                            card_price = p_digits
+                    elif reg_price is None:
+                        reg_price = p_digits
+
+        if not detected_stock:
+            t_low = t.lower()
+            if "в наличии" in t_low:
+                detected_stock = "В наличии"
+            elif "нет в наличии" in t_low or "закончился" in t_low or "распродано" in t_low:
+                detected_stock = "Нет в наличии"
+            elif "осталось" in t_low:
+                m_ost = re.search(r'(\d+)\s*(?:шт|единиц|штук)', t_low)
+                if m_ost:
+                    detected_stock = f"Остаток: {m_ost.group(1)} шт."
+
+    detected_price = card_price if card_price is not None else reg_price
+
+    if not title:
+        title = f"Товар Ozon #{prod_id}"
+
+    categories = {
+        "Вариант": [{
+            "label": "Основной вариант",
+            "variant_name": "Основной",
+            "nm": str(prod_id),
+            "url": original_url,
+            "image_url": default_img,
+            "image_candidates": gallery_imgs,
+            "price": detected_price,
+            "stock": detected_stock,
+            "is_default": True
+        }]
+    }
+
+    return {
+        "marketplace": "Ozon",
+        "title": title,
+        "default_image": default_img,
+        "image_candidates": gallery_imgs,
+        "detected_price": detected_price,
+        "detected_stock": detected_stock,
+        "categories": categories
+    }
+
+def fetch_ozon_windows_tabs(resolved_url, prod_id, slug, allow_open_tab=True):
+    for port in (9222, 9223, 9224, 9225):
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/json")
+            with urllib.request.urlopen(req, timeout=0.8) as resp:
+                tabs = json.loads(resp.read().decode())
+                for t in tabs:
+                    if t.get("type") == "page":
+                        u = t.get("url") or ""
+                        if (prod_id and str(prod_id) in u) or (resolved_url and resolved_url in u) or ("ozon.ru/product" in u and str(prod_id) in u):
+                            ws_url = t.get("webSocketDebuggerUrl")
+                            if ws_url:
+                                parsed_host = urlparse(ws_url)
+                                host = parsed_host.netloc or f"127.0.0.1:{port}"
+                                path = parsed_host.path
+                                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                                sock.settimeout(3.0)
+                                sock.connect((parsed_host.hostname or "127.0.0.1", parsed_host.port or port))
+                                if ws_handshake(sock, host, path):
+                                    cdp_call(sock, "Page.enable", msg_id=1, timeout=1.5)
+                                    cdp_call(sock, "Runtime.enable", msg_id=2, timeout=1.5)
+                                    eval_res = cdp_call(sock, "Runtime.evaluate", {
+                                        "expression": "document.documentElement.outerHTML",
+                                        "returnByValue": True
+                                    }, msg_id=3, timeout=3.0)
+                                    sock.close()
+                                    if eval_res and "result" in eval_res and "value" in eval_res["result"]:
+                                        h = eval_res["result"]["value"]
+                                        if h:
+                                            parsed = parse_ozon_html(h, prod_id, resolved_url)
+                                            if parsed and (parsed.get("detected_price") is not None or parsed.get("default_image")):
+                                                return parsed
+        except Exception:
+            pass
+
+    def scan_uia():
+        try:
+            import uiautomation as auto
+            root = auto.GetRootControl()
+            b_wins = []
+            for w in root.GetChildren():
+                c = w.ClassName
+                nm = (w.Name or "").lower()
+                if c in ("Chrome_WidgetWin_1", "MozillaWindowClass", "ApplicationFrameWindow") or "ozon" in nm or "озон" in nm:
+                    b_wins.append(w)
+
+            for w in b_wins:
+                w_title = w.Name or ""
+                target_found = False
+                matched_tab = None
+
+                w_title_lower = w_title.lower()
+                is_ozon_window = "ozon" in w_title_lower or "озон" in w_title_lower
+                if is_ozon_window and (str(prod_id) in w_title or (slug and len(slug) >= 4 and slug[:15].lower() in w_title_lower)):
+                    target_found = True
+
+                for ctrl in w.GetChildren():
+                    if ctrl.ControlType == auto.ControlType.TabControl:
+                        for ti in ctrl.GetChildren():
+                            if ti.ControlType == auto.ControlType.TabItemControl:
+                                tn = ti.Name or ""
+                                tn_lower = tn.lower()
+                                if ("ozon" in tn_lower or "озон" in tn_lower) and (str(prod_id) in tn or (slug and len(slug) >= 4 and slug[:15].lower() in tn_lower)):
+                                    target_found = True
+                                    w_title = tn
+                                    matched_tab = ti
+                                    break
+                    if target_found:
+                        break
+
+                edit = w.EditControl(searchDepth=8)
+                if edit.Exists(0, 0):
+                    ev = ""
+                    try:
+                        if hasattr(edit, "GetValuePattern"):
+                            ev = edit.GetValuePattern().Value or ""
+                    except Exception:
+                        pass
+                    if not ev:
+                        try:
+                            if hasattr(edit, "GetLegacyIAccessiblePattern"):
+                                ev = edit.GetLegacyIAccessiblePattern().Value or ""
+                        except Exception:
+                            pass
+                    if not ev:
+                        ev = edit.Name or ""
+                    if ev and (str(prod_id) in ev or (slug and len(slug) >= 4 and slug in ev) or (resolved_url and resolved_url in ev)):
+                        target_found = True
+
+                if not target_found and is_ozon_window:
+                    target_found = True
+
+                if target_found:
+                    if matched_tab and hasattr(matched_tab, "Select"):
+                        try:
+                            matched_tab.Select()
+                            time.sleep(0.1)
+                        except Exception:
+                            pass
+
+                    doc_ctrl = w.DocumentControl(searchDepth=10)
+                    scope = doc_ctrl if doc_ctrl.Exists(0, 0) else w
+                    collected = []
+
+                    def walk_controls(elem, depth=0):
+                        if depth > 16 or len(collected) > 600:
+                            return
+                        nm = elem.Name
+                        if nm:
+                            collected.append(nm.strip())
+                        if hasattr(elem, "ControlType") and elem.ControlType == auto.ControlType.ImageControl:
+                            val = getattr(elem, "Value", "") or getattr(elem, "HelpText", "") or ""
+                            if "ozone.ru" in val or "ozon.ru" in val or "cdn" in val:
+                                collected.append(val.strip())
+                        for child in elem.GetChildren():
+                            walk_controls(child, depth + 1)
+
+                    walk_controls(scope)
+                    parsed_ui = parse_ozon_from_ui_texts(collected, w_title, prod_id, resolved_url)
+                    if parsed_ui and (parsed_ui.get("detected_price") is not None or parsed_ui.get("title")):
+                        return parsed_ui
+        except Exception:
+            pass
+        return None
+
+    def scan_enum_windows():
+        try:
+            import ctypes
+            from ctypes import wintypes
+            user32 = ctypes.windll.user32
+            enum_titles = []
+            def enum_handler(hwnd, _l):
+                if user32.IsWindowVisible(hwnd):
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buf = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buf, length + 1)
+                        cls_buf = ctypes.create_unicode_buffer(256)
+                        user32.GetClassNameW(hwnd, cls_buf, 256)
+                        cls_name = cls_buf.value
+                        t_val = buf.value
+                        t_low = t_val.lower()
+                        if "ozon" in t_low or "озон" in t_low:
+                            enum_titles.append(t_val)
+                return True
+            WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+            user32.EnumWindows(WNDENUMPROC(enum_handler), 0)
+            if enum_titles:
+                for t in enum_titles:
+                    if str(prod_id) in t or (slug and slug[:15].lower() in t.lower()):
+                        parsed_enum = parse_ozon_from_ui_texts([], t, prod_id, resolved_url)
+                        if parsed_enum and parsed_enum.get("title"):
+                            return parsed_enum
+                parsed_enum = parse_ozon_from_ui_texts([], enum_titles[0], prod_id, resolved_url)
+                if parsed_enum and parsed_enum.get("title"):
+                    return parsed_enum
+        except Exception:
+            pass
+        return None
+
+    res = scan_uia()
+    if res and (res.get("detected_price") is not None or res.get("title")):
+        return res
+
+    res = scan_enum_windows()
+    if res and (res.get("detected_price") is not None or res.get("title")):
+        return res
+
+    if allow_open_tab:
+        try:
+            webbrowser.open_new_tab(resolved_url)
+            for _ in range(8):
+                time.sleep(0.5)
+                res = scan_uia()
+                if res and (res.get("detected_price") is not None or res.get("title")):
+                    return res
+                res = scan_enum_windows()
+                if res and (res.get("detected_price") is not None or res.get("title")):
+                    return res
+        except Exception:
+            pass
+
+    return None
+
 def fetch_ozon_details(clean_url: str):
     resolved_url = unshorten_url(clean_url)
     ozon_match = re.search(r'/product/(?:([^/]+)?-)?(\d+)', resolved_url)
@@ -792,6 +1893,16 @@ def fetch_ozon_details(clean_url: str):
         qs = parse_qs(parsed.query)
         prod_id = qs.get("sku", [None])[0] or ""
 
+    cffi_html = fetch_ozon_curl_cffi(resolved_url)
+    if cffi_html:
+        parsed_cffi = parse_ozon_html(cffi_html, prod_id, resolved_url)
+        if parsed_cffi and (parsed_cffi.get("detected_price") is not None or parsed_cffi.get("default_image")):
+            return parsed_cffi
+
+    api_parsed = fetch_ozon_composer_api(resolved_url, prod_id)
+    if api_parsed and (api_parsed.get("detected_price") is not None or api_parsed.get("default_image")):
+        return api_parsed
+
     if sys.platform == "darwin":
         try:
             cur_script = os.path.abspath(__file__)
@@ -806,13 +1917,27 @@ def fetch_ozon_details(clean_url: str):
                 raw_json = out.split("__OZON_JSON_START__")[1].split("__OZON_JSON_END__")[0].strip()
                 if raw_json and raw_json != "{}":
                     parsed_dict = json.loads(raw_json)
-                    if parsed_dict and parsed_dict.get("title"):
+                    if parsed_dict and (parsed_dict.get("detected_price") is not None or parsed_dict.get("default_image")):
                         return parsed_dict
         except Exception:
             pass
+    elif sys.platform == "win32":
+        tab_parsed = fetch_ozon_windows_tabs(resolved_url, prod_id, slug, allow_open_tab=True)
+        if tab_parsed and (tab_parsed.get("detected_price") is not None or tab_parsed.get("title") or tab_parsed.get("default_image")):
+            return tab_parsed
+    elif sys.platform.startswith("linux"):
+        lb_path = find_linux_browser()
+        if lb_path:
+            linux_html = fetch_ozon_cdp(lb_path, resolved_url)
+            if not linux_html:
+                linux_html = fetch_ozon_headless_linux(lb_path, resolved_url)
+            if linux_html:
+                parsed_linux = parse_ozon_html(linux_html, prod_id, resolved_url)
+                if parsed_linux and (parsed_linux.get("detected_price") is not None or parsed_linux.get("default_image")):
+                    return parsed_linux
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ru-RU,ru;q=0.9"
     }
@@ -822,7 +1947,9 @@ def fetch_ozon_details(clean_url: str):
         with urllib.request.urlopen(req, timeout=5) as resp:
             html = resp.read().decode(errors="ignore")
             if html:
-                return parse_ozon_html(html, prod_id, resolved_url)
+                parsed_u = parse_ozon_html(html, prod_id, resolved_url)
+                if parsed_u and (parsed_u.get("detected_price") is not None or parsed_u.get("default_image")):
+                    return parsed_u
     except Exception:
         pass
 
@@ -878,15 +2005,53 @@ def download_image_pil(image_urls, max_w: int = 100, max_h: int = 120):
             urls.append(u.replace("/c246x328/", "/big/"))
         urls.append(u)
 
-    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+    }
     for u in urls:
         if not u.startswith("http"):
             continue
+        cur_headers = dict(headers)
+        if "ozone.ru" in u or "ozon" in u:
+            cur_headers["Referer"] = "https://www.ozon.ru/"
+            cur_headers["Origin"] = "https://www.ozon.ru"
+        elif "wbbasket" in u or "wildberries" in u:
+            cur_headers["Referer"] = "https://www.wildberries.ru/"
+            cur_headers["Origin"] = "https://www.wildberries.ru"
         try:
-            req = urllib.request.Request(u, headers=headers)
+            req = urllib.request.Request(u, headers=cur_headers)
             with urllib.request.urlopen(req, timeout=4) as resp:
                 data = resp.read()
                 im = Image.open(io.BytesIO(data))
+                im.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+                return im
+        except Exception:
+            pass
+        try:
+            from curl_cffi import requests as cffi_requests
+            r = cffi_requests.get(u, headers=cur_headers, impersonate="chrome120", timeout=5)
+            if r.status_code == 200 and r.content:
+                im = Image.open(io.BytesIO(r.content))
+                im.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+                return im
+        except Exception:
+            pass
+        try:
+            startupinfo = None
+            creationflags = 0
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                creationflags = subprocess.CREATE_NO_WINDOW
+            cmd = ["curl", "-s", "-L", "-m", "5", "-A", cur_headers["User-Agent"]]
+            if "Referer" in cur_headers:
+                cmd.extend(["-H", f"Referer: {cur_headers['Referer']}"])
+            cmd.append(u)
+            res = subprocess.run(cmd, capture_output=True, timeout=6, startupinfo=startupinfo, creationflags=creationflags)
+            if res.stdout:
+                im = Image.open(io.BytesIO(res.stdout))
                 im.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
                 return im
         except Exception:
@@ -1382,7 +2547,8 @@ class AddWindow:
             return
 
         target_price = int(tgt_digits)
-        current_price = int(cur_digits) if cur_digits else target_price
+        current_price = int(cur_digits) if cur_digits else None
+        is_ready = bool(current_price is not None and current_price <= target_price)
 
         v_item = self.selected_variant
         d = self.inspected_data
@@ -1405,9 +2571,9 @@ class AddWindow:
             self.item_to_edit["target_price"] = target_price
             self.item_to_edit["current_price"] = current_price
             self.item_to_edit["stock"] = stock_val
-            self.item_to_edit["status"] = "Готово к покупке" if current_price <= target_price else "Отслеживается"
+            self.item_to_edit["status"] = "Готово к покупке" if is_ready else "Отслеживается"
             self.item_to_edit["last_checked"] = datetime.now().strftime("%H:%M:%S")
-            self.item_to_edit["notified"] = bool(current_price <= target_price)
+            self.item_to_edit["notified"] = is_ready
             self.on_added_cb(self.item_to_edit)
             self.win.destroy()
             return
@@ -1423,9 +2589,9 @@ class AddWindow:
             "target_price": target_price,
             "current_price": current_price,
             "stock": stock_val,
-            "status": "Готово к покупке" if current_price <= target_price else "Отслеживается",
+            "status": "Готово к покупке" if is_ready else "Отслеживается",
             "last_checked": datetime.now().strftime("%H:%M:%S"),
-            "notified": bool(current_price <= target_price)
+            "notified": is_ready
         }
 
         self.on_added_cb(item)
@@ -2168,6 +3334,11 @@ class App:
                         if res.get("title") and "Товар" not in res.get("title"):
                             item["title"] = res["title"]
 
+                        if not item.get("image_url") and res.get("default_image"):
+                            item["image_url"] = res["default_image"]
+                        if not item.get("image_candidates") and res.get("image_candidates"):
+                            item["image_candidates"] = res["image_candidates"]
+
                         var_p = None
                         var_stock = None
                         var_tgt = item.get("variant")
@@ -2301,18 +3472,18 @@ class App:
             set_skipped_version(remote_ver)
             win.destroy()
 
-        btn_yes = tk.Label(
+        btn_download = tk.Label(
             btn_bar,
-            text="Да",
+            text="Скачать",
             font=("TkDefaultFont", 9, "bold"),
             bg="#16a34a", fg="#ffffff",
             padx=18, pady=6,
             cursor="hand2", relief="flat"
         )
-        btn_yes.pack(side="right", padx=(8, 0))
-        btn_yes.bind("<Button-1>", lambda _e: on_yes())
-        btn_yes.bind("<Enter>", lambda _e: btn_yes.config(bg="#15803d"))
-        btn_yes.bind("<Leave>", lambda _e: btn_yes.config(bg="#16a34a"))
+        btn_download.pack(side="right", padx=(8, 0))
+        btn_download.bind("<Button-1>", lambda _e: on_yes())
+        btn_download.bind("<Enter>", lambda _e: btn_download.config(bg="#15803d"))
+        btn_download.bind("<Leave>", lambda _e: btn_download.config(bg="#16a34a"))
 
         btn_skip = tk.Label(
             btn_bar,
@@ -2353,6 +3524,46 @@ def get_missing_dependencies():
                 "package": "pyobjc-framework-WebKit",
                 "desc": "Фоновая проверка цен Ozon без открытия реального окна браузера"
             })
+    elif sys.platform == "win32":
+        has_uiauto = False
+        try:
+            import uiautomation
+            has_uiauto = True
+        except ImportError:
+            pass
+        if not has_uiauto:
+            missing.append({
+                "name": "UIAutomation (для вкладок браузера)",
+                "package": "uiautomation",
+                "desc": "Необязательный компонент для проверки цен Ozon через открытые вкладки в браузере (Chrome, Edge, Яндекс Браузер)",
+                "optional": True
+            })
+        has_curl_cffi = False
+        try:
+            import curl_cffi
+            has_curl_cffi = True
+        except ImportError:
+            pass
+        if not has_curl_cffi:
+            missing.append({
+                "name": "curl_cffi",
+                "package": "curl_cffi",
+                "desc": "Необязательный модуль для быстрого скачивания картинок и проверки цен товаров",
+                "optional": True
+            })
+    elif sys.platform.startswith("linux"):
+        has_curl_cffi = False
+        try:
+            import curl_cffi
+            has_curl_cffi = True
+        except ImportError:
+            pass
+        if not has_curl_cffi:
+            missing.append({
+                "name": "curl_cffi",
+                "package": "curl_cffi",
+                "desc": "Модуль для фоновой проверки цен и фото товаров Ozon и Wildberries на Linux"
+            })
     return missing
 
 def show_dependency_dialog(missing_deps):
@@ -2371,21 +3582,25 @@ def show_dependency_dialog(missing_deps):
     card = tk.Frame(root, bg="#ffffff", highlightbackground="#e2e8f0", highlightthickness=1)
     card.pack(fill="both", expand=True, padx=16, pady=16)
 
+    all_optional = all(item.get("optional", False) for item in missing_deps)
+
     top_frame = tk.Frame(card, bg="#ffffff")
     top_frame.pack(fill="x", padx=20, pady=(18, 10))
 
+    title_text = "Дополнительные компоненты (необязательно)" if all_optional else "Необходима разовая настройка"
     title_lbl = tk.Label(
         top_frame,
-        text="Необходима разовая настройка",
+        text=title_text,
         font=("SF Pro Display", 16, "bold"),
         bg="#ffffff",
         fg="#0f172a"
     )
     title_lbl.pack(anchor="w")
 
+    subtitle_text = "Для расширенной работы с вкладками браузера доступны компоненты. Вы можете установить их автоматически или пропустить." if all_optional else "Для полноценной работы программы требуются дополнительные компоненты. Программа может установить их автоматически."
     subtitle_lbl = tk.Label(
         top_frame,
-        text="Для полноценной работы программы требуются дополнительные компоненты. Программа может установить их автоматически.",
+        text=subtitle_text,
         font=("SF Pro Text", 11),
         bg="#ffffff",
         fg="#475569",
@@ -2474,19 +3689,21 @@ def show_dependency_dialog(missing_deps):
                 def fin_err():
                     err_txt = f"Не удалось установить автоматически. Выполните:\npip install {' '.join(pkgs)}"
                     status_lbl.config(text=err_txt, fg="#b91c1c")
+                    close_lbl_text = "Продолжить без них" if all_optional else "Закрыть"
                     close_btn = tk.Label(
-                        btn_bar, text="Закрыть", font=("SF Pro Text", 11),
+                        btn_bar, text=close_lbl_text, font=("SF Pro Text", 11),
                         bg="#f1f5f9", fg="#475569", padx=16, pady=7, cursor="hand2", relief="solid", bd=1
                     )
                     close_btn.pack(side="right")
-                    close_btn.bind("<Button-1>", lambda _e: (root.destroy(), sys.exit(1)))
+                    close_btn.bind("<Button-1>", lambda _e: (root.destroy(), None if all_optional else sys.exit(1)))
                 root.after(0, fin_err)
 
         threading.Thread(target=worker, daemon=True).start()
 
     def on_cancel():
         root.destroy()
-        sys.exit(0)
+        if not all_optional:
+            sys.exit(0)
 
     btn_install = tk.Label(
         btn_bar,
@@ -2504,9 +3721,10 @@ def show_dependency_dialog(missing_deps):
     btn_install.bind("<Enter>", lambda _e: btn_install.config(bg="#15803d"))
     btn_install.bind("<Leave>", lambda _e: btn_install.config(bg="#16a34a"))
 
+    cancel_lbl_text = "Пропустить" if all_optional else "Нет, я сам(а)"
     btn_cancel = tk.Label(
         btn_bar,
-        text="Нет, я сам(а)",
+        text=cancel_lbl_text,
         font=("SF Pro Text", 11),
         bg="#f8fafc",
         fg="#475569",
@@ -2528,7 +3746,7 @@ def main():
     missing = get_missing_dependencies()
     if missing:
         ok = show_dependency_dialog(missing)
-        if not ok:
+        if not ok and not all(item.get("optional", False) for item in missing):
             return
         global HAS_PIL
         try:
@@ -2541,18 +3759,26 @@ def main():
     root.mainloop()
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 4 and sys.argv[1] == "--fetch-ozon-headless":
+    if len(sys.argv) >= 4 and sys.argv[1] in ("--fetch-ozon-headless", "--fetch-wb-headless"):
         try:
             os.nice(10)
         except Exception:
             pass
+        mode = sys.argv[1]
         u = sys.argv[2]
         pid = sys.argv[3]
         h = fetch_ozon_headless_worker(u, pid)
         if h:
-            p = parse_ozon_html(h, pid, u)
-            sys.stdout.write("__OZON_JSON_START__\n" + json.dumps(p, ensure_ascii=False) + "\n__OZON_JSON_END__\n")
+            if mode == "--fetch-wb-headless":
+                wb_p = parse_wb_html(h)
+                sys.stdout.write("__WB_JSON_START__\n" + json.dumps({"detected_price": wb_p}, ensure_ascii=False) + "\n__WB_JSON_END__\n")
+            else:
+                p = parse_ozon_html(h, pid, u)
+                sys.stdout.write("__OZON_JSON_START__\n" + json.dumps(p, ensure_ascii=False) + "\n__OZON_JSON_END__\n")
         else:
-            sys.stdout.write("__OZON_JSON_START__\n{}\n__OZON_JSON_END__\n")
+            if mode == "--fetch-wb-headless":
+                sys.stdout.write("__WB_JSON_START__\n{}\n__WB_JSON_END__\n")
+            else:
+                sys.stdout.write("__OZON_JSON_START__\n{}\n__OZON_JSON_END__\n")
         sys.exit(0)
     main()
